@@ -1,0 +1,6 @@
+{
+  "name": "LUMA Onboarding",
+  "description": "Persian AI platform onboarding experience with persistent LumaCore visual architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
