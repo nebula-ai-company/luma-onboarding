@@ -34,7 +34,17 @@ export type OnboardingEventType =
   | 'onboarding_creation_failed'
   | 'onboarding_creation_saved'
   | 'onboarding_creation_retried'
-  | 'onboarding_completed_from_creation';
+  | 'onboarding_completed_from_creation'
+  | 'onboarding_completion_started'
+  | 'onboarding_transition_triggered'
+  | 'onboarding_handoff_completed'
+  | 'onboarding_persisted'
+  | 'onboarding_resumed'
+  | 'onboarding_restarted_from_workspace'
+  | 'workspace_section_changed'
+  | 'workspace_tool_launched'
+  | 'workspace_result_action_clicked'
+  | 'workspace_preferences_modal_opened';
 
 export interface OnboardingEventPayload {
   step?: number;

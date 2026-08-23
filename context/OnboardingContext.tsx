@@ -1,12 +1,13 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type {
   OnboardingState,
   OnboardingContextValue,
   LumaSectionId,
   RecommendedFirstAction,
   FirstCreationMode,
+  OnboardingLifecycle,
 } from '@/types/onboarding';
 import {
   deriveArchetypes,
@@ -15,14 +16,21 @@ import {
   MAX_INTERESTS_SELECTION,
 } from '@/lib/onboarding-data';
 import { trackOnboardingEvent } from '@/lib/analytics';
+import {
+  persistenceAdapter,
+  ONBOARDING_VERSION,
+  type PersistedOnboardingData,
+  type OnboardingCompletionPath,
+} from '@/lib/persistence-adapter';
+import { resolveOnboardingDestination } from '@/lib/destination-resolver';
 
-const TOTAL_STEPS = 7; // 0: Welcome, 1: Profession, 2: Interests, 3: Confirmation/Synthesis, 4: Phase 3 Ecosystem, 5: Phase 4 Recommendations, 6: Temporary Phase 5
+const TOTAL_STEPS = 7; // 0: Welcome, 1: Profession, 2: Interests, 3: Confirmation/Synthesis, 4: Ecosystem, 5: Recommendations, 6: First Creation
 
 const defaultSections = derivePrimarySections([], []);
 const defaultRecommendations = deriveToolRecommendations([], []);
 
 const initialState: OnboardingState = {
-  currentStep: 0, // 0 = Welcome scene
+  currentStep: 0,
   totalSteps: TOTAL_STEPS,
   direction: 1,
   selectedProfessions: [],
@@ -40,12 +48,155 @@ const initialState: OnboardingState = {
   recommendedFirstAction: defaultRecommendations.recommendedFirstAction,
   selectedRecommendedTool: defaultRecommendations.primaryRecommendation?.id || 'generate-image',
   firstCreationMode: null,
+  firstCreationTool: null,
+  firstCreationPrompt: '',
+  firstCreationTemplate: null,
+  firstCreationStatus: 'idle',
+  firstCreationResult: null,
+  firstCreationInputUrl: null,
+  creationStartedAt: null,
+  creationCompletedAt: null,
+  // Phase 6 Lifecycle & Workspace
+  lifecycle: 'initializing',
+  activeWorkspaceSection: 'ai_tools',
+  activeWorkspaceToolId: defaultRecommendations.primaryRecommendation?.id || 'generate-image',
 };
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
 
 export function OnboardingProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<OnboardingState>(initialState);
+
+  // Helper to construct durable persistence payload
+  const buildPersistedSnapshot = useCallback(
+    (
+      currentState: OnboardingState,
+      completionPath: OnboardingCompletionPath,
+      completedTime: string | null
+    ): PersistedOnboardingData => {
+      const destination = resolveOnboardingDestination(currentState);
+
+      return {
+        version: ONBOARDING_VERSION,
+        completedAt: completedTime,
+        isSkipped: currentState.isSkipped || completionPath === 'skipped',
+        completionPath,
+        profile: {
+          professions: currentState.selectedProfessions,
+          interests: currentState.selectedInterests,
+          archetypes: currentState.derivedArchetypes,
+        },
+        ecosystem: {
+          primarySections: currentState.primarySections,
+          exploredSections: currentState.exploredSections,
+          ecosystemTourCompleted: currentState.ecosystemTourCompleted,
+        },
+        recommendations: {
+          recommendedToolIds: currentState.recommendedTools,
+          recommendedFirstAction: currentState.recommendedFirstAction,
+          selectedRecommendedTool: currentState.selectedRecommendedTool,
+          toolRecommendations: currentState.toolRecommendations,
+        },
+        creation: {
+          mode: currentState.firstCreationMode,
+          hasCreatedResult: Boolean(currentState.firstCreationResult),
+          toolId: currentState.firstCreationTool,
+          prompt: currentState.firstCreationPrompt || null,
+          templateId: currentState.firstCreationTemplate,
+          result: currentState.firstCreationResult,
+          inputUrl: currentState.firstCreationInputUrl,
+          durationSeconds:
+            currentState.creationStartedAt && currentState.creationCompletedAt
+              ? (currentState.creationCompletedAt - currentState.creationStartedAt) / 1000
+              : undefined,
+        },
+        destination: {
+          targetSection: destination.targetSection,
+          targetToolId: destination.targetToolId,
+          route: destination.route,
+          reason: destination.reasonPersian,
+        },
+        metadata: {
+          lastUpdated: new Date().toISOString(),
+          clientTimestamp: Date.now(),
+        },
+      };
+    },
+    []
+  );
+
+  // Restore existing session on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkPersistedSession() {
+      try {
+        const persisted = await persistenceAdapter.load();
+        if (!isMounted) return;
+
+        if (persisted && persisted.completedAt) {
+          // Returning user with completed onboarding
+          const professions = persisted.profile.professions || [];
+          const interests = persisted.profile.interests || [];
+          const archetypes = deriveArchetypes(professions, interests);
+          const { primary } = derivePrimarySections(professions, interests);
+          const { recommendations, recommendedFirstAction, primaryRecommendation } =
+            deriveToolRecommendations(professions, interests);
+
+          setState((prev) => ({
+            ...prev,
+            lifecycle: 'in_workspace',
+            onboardingCompleted: true,
+            isSkipped: persisted.isSkipped,
+            selectedProfessions: professions,
+            selectedInterests: interests,
+            derivedArchetypes: archetypes,
+            primarySections: primary,
+            toolRecommendations: recommendations,
+            recommendedFirstAction,
+            selectedRecommendedTool:
+              persisted.recommendations.selectedRecommendedTool ||
+              primaryRecommendation?.id ||
+              'generate-image',
+            firstCreationMode: persisted.creation.mode,
+            firstCreationTool: persisted.creation.toolId,
+            firstCreationPrompt: persisted.creation.prompt || '',
+            firstCreationTemplate: persisted.creation.templateId,
+            firstCreationStatus: persisted.creation.hasCreatedResult ? 'success' : 'idle',
+            firstCreationResult: persisted.creation.result,
+            activeWorkspaceSection: persisted.destination?.targetSection || 'ai_tools',
+            activeWorkspaceToolId:
+              persisted.destination?.targetToolId ||
+              persisted.creation.toolId ||
+              primaryRecommendation?.id ||
+              'generate-image',
+          }));
+
+          trackOnboardingEvent('onboarding_resumed', {
+            completionPath: persisted.completionPath,
+            hasCreatedResult: persisted.creation.hasCreatedResult,
+          });
+        } else {
+          // Fresh user
+          setState((prev) => ({
+            ...prev,
+            lifecycle: 'in_onboarding',
+          }));
+        }
+      } catch (err) {
+        console.warn('[LUMA Context] Session hydration error:', err);
+        if (isMounted) {
+          setState((prev) => ({ ...prev, lifecycle: 'in_onboarding' }));
+        }
+      }
+    }
+
+    checkPersistedSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const nextStep = useCallback(() => {
     setState((prev) => {
@@ -107,22 +258,83 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   const skipOnboarding = useCallback(() => {
     trackOnboardingEvent('onboarding_step_skipped', { fromStep: state.currentStep });
-    setState((prev) => ({
-      ...prev,
-      isSkipped: true,
-      onboardingCompleted: true,
-    }));
-  }, [state.currentStep]);
+    
+    setState((prev) => {
+      const updated: OnboardingState = {
+        ...prev,
+        isSkipped: true,
+        onboardingCompleted: true,
+        lifecycle: 'transitioning',
+        activeWorkspaceSection: 'ai_tools',
+      };
+
+      const snapshot = buildPersistedSnapshot(updated, 'skipped', new Date().toISOString());
+      persistenceAdapter.save(snapshot);
+
+      return updated;
+    });
+  }, [state.currentStep, buildPersistedSnapshot]);
 
   const completeOnboarding = useCallback(() => {
+    setState((prev) => {
+      const hasResult = Boolean(prev.firstCreationResult);
+      const completionPath: OnboardingCompletionPath = hasResult ? 'created_result' : 'completed_flow';
+      
+      const destination = resolveOnboardingDestination(prev);
+
+      const updated: OnboardingState = {
+        ...prev,
+        onboardingCompleted: true,
+        lifecycle: 'transitioning',
+        activeWorkspaceSection: destination.targetSection,
+        activeWorkspaceToolId: destination.targetToolId || prev.selectedRecommendedTool,
+      };
+
+      const snapshot = buildPersistedSnapshot(updated, completionPath, new Date().toISOString());
+      persistenceAdapter.save(snapshot);
+
+      trackOnboardingEvent('onboarding_completion_started', {
+        completionPath,
+        hasCreatedResult: hasResult,
+        targetSection: destination.targetSection,
+      });
+
+      return updated;
+    });
+  }, [buildPersistedSnapshot]);
+
+  const startTransitionToWorkspace = useCallback(() => {
     setState((prev) => ({
       ...prev,
-      onboardingCompleted: true,
+      lifecycle: 'transitioning',
     }));
+    trackOnboardingEvent('onboarding_transition_triggered');
+  }, []);
+
+  const finishTransitionToWorkspace = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      lifecycle: 'in_workspace',
+    }));
+    trackOnboardingEvent('onboarding_handoff_completed');
+  }, []);
+
+  const relaunchOnboarding = useCallback((step: number = 0) => {
+    setState((prev) => ({
+      ...prev,
+      lifecycle: 'in_onboarding',
+      onboardingCompleted: false,
+      currentStep: Math.max(0, Math.min(step, prev.totalSteps - 1)),
+    }));
+    trackOnboardingEvent('onboarding_restarted_from_workspace', { step });
   }, []);
 
   const resetOnboarding = useCallback(() => {
-    setState(initialState);
+    persistenceAdapter.clear();
+    setState({
+      ...initialState,
+      lifecycle: 'in_onboarding',
+    });
   }, []);
 
   const toggleProfession = useCallback((id: string) => {
@@ -290,9 +502,46 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         ...prev,
         firstCreationMode: mode,
         selectedRecommendedTool: chosenTool,
+        firstCreationTool: chosenTool,
         direction: 1,
         currentStep: Math.min(prev.currentStep + 1, prev.totalSteps - 1),
       };
+    });
+  }, []);
+
+  const setCreationDurableState = useCallback((updates: Partial<import('@/types/onboarding').CreationDurableState>) => {
+    setState((prev) => ({
+      ...prev,
+      ...updates,
+    }));
+  }, []);
+
+  const resetCreationState = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      firstCreationPrompt: '',
+      firstCreationTemplate: null,
+      firstCreationStatus: 'idle',
+      firstCreationResult: null,
+      firstCreationInputUrl: null,
+      creationStartedAt: null,
+      creationCompletedAt: null,
+    }));
+  }, []);
+
+  const setActiveWorkspaceSection = useCallback((sectionId: LumaSectionId) => {
+    setState((prev) => {
+      trackOnboardingEvent('workspace_section_changed', { sectionId });
+      return { ...prev, activeWorkspaceSection: sectionId };
+    });
+  }, []);
+
+  const setActiveWorkspaceToolId = useCallback((toolId: string | null) => {
+    setState((prev) => {
+      if (toolId) {
+        trackOnboardingEvent('workspace_tool_launched', { toolId });
+      }
+      return { ...prev, activeWorkspaceToolId: toolId };
     });
   }, []);
 
@@ -317,6 +566,13 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setSelectedRecommendedTool,
       setFirstCreationMode,
       proceedToFirstCreation,
+      setCreationDurableState,
+      resetCreationState,
+      setActiveWorkspaceSection,
+      setActiveWorkspaceToolId,
+      startTransitionToWorkspace,
+      finishTransitionToWorkspace,
+      relaunchOnboarding,
     }),
     [
       state,
@@ -338,6 +594,13 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setSelectedRecommendedTool,
       setFirstCreationMode,
       proceedToFirstCreation,
+      setCreationDurableState,
+      resetCreationState,
+      setActiveWorkspaceSection,
+      setActiveWorkspaceToolId,
+      startTransitionToWorkspace,
+      finishTransitionToWorkspace,
+      relaunchOnboarding,
     ]
   );
 
@@ -355,5 +618,3 @@ export function useOnboarding() {
   }
   return context;
 }
-
-

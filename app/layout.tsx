@@ -1,12 +1,5 @@
 import type { Metadata } from 'next';
-import { Vazirmatn } from 'next/font/google';
 import './globals.css';
-
-const vazirmatn = Vazirmatn({
-  subsets: ['arabic', 'latin'],
-  display: 'swap',
-  variable: '--font-vazirmatn',
-});
 
 export const metadata: Metadata = {
   title: 'لوما | پلتفرم هوش مصنوعی (LUMA AI)',
@@ -24,9 +17,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fa" dir="rtl" className={vazirmatn.variable}>
+    <html lang="fa" dir="rtl">
       <body
-        className={`${vazirmatn.className} bg-[#07070b] text-zinc-100 antialiased`}
+        className="bg-[#07070b] text-zinc-100 antialiased"
         suppressHydrationWarning
       >
         {children}
@@ -34,3 +27,4 @@ export default function RootLayout({
     </html>
   );
 }
+

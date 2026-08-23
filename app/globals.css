@@ -1,1 +1,142 @@
 @import "tailwindcss";
+
+/* IRANYekanX Standard & Persian Numerals (FaNum) */
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWuU2YoGnkCBxj2l8hVPvKnTDJmfqNSEXA1U9W') format('woff2');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWG1TXTNQsFya8dPj75w6m0DZpUnuICXQe1zSM') format('woff2');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWMufNQ9yP1TFSZvyopzXDRIbfcB5tC9nrKWw7') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWERwwyMazSVHBoTu4mIt7C39he0vaFsW2UGPg') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCW0VhYr7P6G98l1RT3KZNu5nLdt7EDxAjzJcC2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWsA1Bzmw5DtHG1BxL4g6PpZ0TrUXaAzNoqfQS') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWUek3RGqXzDcqJVGl0CnyekP8EL1HwAjtImBs') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCW7dEWWbRPgN3mf4rIQL9pXBGJDSVaCM2E0oUs') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWdCS4vUYb9TX2i40Gw7yNtgknEQAPWJhYCO8F') format('woff2');
+  font-weight: 850;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCW2YJCQiOeny6Ogrl37EXKGYBT5h0IWMd2FZi8') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanX';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWETMQvMazSVHBoTu4mIt7C39he0vaFsW2UGPg') format('woff2');
+  font-weight: 950;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Persian Numeral Variant (FaNum) */
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWnqkySChl6K2zHuBFQwXYZo4MeOEVgGsh1pUS') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWlVBvnofELwJUzf2FbD8KRWXCtsdEMiuAgH46') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWBLjaVTJKAFX4yvLPVJuZIR32w0NtCHDQUWn9') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IRANYekanXFaNum';
+  src: url('https://famjljl5gg.ufs.sh/f/aej4FOV7nKCWeq97qgd1bg6YJhydCKQtTLB5jAR4m2uX0zPG') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'IRANYekanX', 'IRANYekanXFaNum', sans-serif;
+  --font-mono: 'IRANYekanXFaNum', 'IRANYekanX', monospace;
+}
+
+:root {
+  font-family: 'IRANYekanX', 'IRANYekanXFaNum', sans-serif;
+}
+
+html,
+body,
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: 'IRANYekanX', 'IRANYekanXFaNum', sans-serif !important;
+}

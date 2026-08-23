@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useTransition } from 'react';
+import React, { useState, useEffect, useRef, useTransition, useCallback } from 'react';
 import { motion, AnimatePresence, useReducedMotion, type Variants } from 'motion/react';
 import {
   Sparkle,
@@ -23,13 +23,15 @@ import {
   CirclesThreePlus,
   Eye,
   Sliders,
-  FolderSimple,
+  WarningCircle,
+  FileImage,
 } from '@phosphor-icons/react';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { LumaCore } from '@/components/core/LumaCore';
 import { LUMA_TOOLS_CATALOG, type LumaToolDefinition } from '@/lib/onboarding-data';
 import {
   creationAdapter,
+  isSimulationMode,
   FUN_TRANSFORM_TEMPLATES,
   SAMPLE_AVATARS,
   QUICK_PROMPTS,
@@ -41,6 +43,9 @@ import {
 import { trackOnboardingEvent } from '@/lib/analytics';
 import { BeforeAfterSlider } from '@/components/onboarding/creation/BeforeAfterSlider';
 
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+
 export function FirstCreationScene() {
   const {
     prevStep,
@@ -51,6 +56,15 @@ export function FirstCreationScene() {
     setSelectedRecommendedTool,
     toolRecommendations,
     selectedProfessions,
+    // Durable creation state from context
+    firstCreationTool,
+    firstCreationPrompt,
+    firstCreationTemplate,
+    firstCreationStatus,
+    firstCreationResult,
+    firstCreationInputUrl,
+    setCreationDurableState,
+    resetCreationState,
   } = useOnboarding();
 
   const shouldReduceMotion = useReducedMotion();
@@ -61,41 +75,69 @@ export function FirstCreationScene() {
 
   // Resolved active tool for recommended mode
   const activeTool: LumaToolDefinition =
-    LUMA_TOOLS_CATALOG.find((t) => t.id === selectedRecommendedTool) ||
+    LUMA_TOOLS_CATALOG.find((t) => t.id === (firstCreationTool || selectedRecommendedTool)) ||
     LUMA_TOOLS_CATALOG.find((t) => t.id === toolRecommendations[0]?.id) ||
     LUMA_TOOLS_CATALOG[0];
 
-  // Generation status: 'idle' | 'generating' | 'success' | 'error'
-  const [status, setStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle');
-  const [progressStage, setProgressStage] = useState<CreationProgressStage | null>(null);
-  const [result, setResult] = useState<CreationResultData | null>(null);
-
-  // Recommended Mode inputs
+  // Tool presets
   const toolQuickPrompts = QUICK_PROMPTS[activeTool.id] || QUICK_PROMPTS['generate-image'] || [];
-  const [prompt, setPrompt] = useState<string>(toolQuickPrompts[0]?.prompt || '');
+
+  // Local state initialized with durable state
+  const [prompt, setPrompt] = useState<string>(
+    firstCreationPrompt || toolQuickPrompts[0]?.prompt || ''
+  );
   const [selectedSourceImage, setSelectedSourceImage] = useState<string>(
-    toolQuickPrompts[0]?.sampleImageUrl || SAMPLE_AVATARS[0].imageUrl
+    firstCreationInputUrl || toolQuickPrompts[0]?.sampleImageUrl || SAMPLE_AVATARS[0].imageUrl
+  );
+  const [selectedFunTemplate, setSelectedFunTemplate] = useState<FunTransformTemplate>(() => {
+    if (firstCreationTemplate) {
+      const matched = FUN_TRANSFORM_TEMPLATES.find((t) => t.id === firstCreationTemplate);
+      if (matched) return matched;
+    }
+    return FUN_TRANSFORM_TEMPLATES[0];
+  });
+  const [selectedFunAvatar, setSelectedFunAvatar] = useState<SampleAvatarOption>(SAMPLE_AVATARS[0]);
+  const [customUploadedImage, setCustomUploadedImage] = useState<string | null>(
+    firstCreationInputUrl && firstCreationInputUrl.startsWith('blob:') ? firstCreationInputUrl : null
   );
 
-  // Fun Mode inputs
-  const [selectedFunTemplate, setSelectedFunTemplate] = useState<FunTransformTemplate>(
-    FUN_TRANSFORM_TEMPLATES[0]
+  // Status & progress
+  const [status, setStatus] = useState<'idle' | 'generating' | 'success' | 'error'>(
+    firstCreationStatus === 'success' && firstCreationResult ? 'success' : 'idle'
   );
-  const [selectedFunAvatar, setSelectedFunAvatar] = useState<SampleAvatarOption>(
-    SAMPLE_AVATARS[0]
-  );
-  const [customUploadedImage, setCustomUploadedImage] = useState<string | null>(null);
+  const [progressStage, setProgressStage] = useState<CreationProgressStage | null>(null);
+  const [result, setResult] = useState<CreationResultData | null>(firstCreationResult || null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // UI helpers
+  // UI state
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
+
+  // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Telemetry time tracking
+  const blobUrlRef = useRef<string | null>(customUploadedImage);
   const sceneLoadTimeRef = useRef<number>(0);
   const generationStartTimeRef = useRef<number>(0);
+
+  // Clean up object URLs on unmount or file replacement
+  const cleanupBlobUrl = useCallback(() => {
+    if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(blobUrlRef.current);
+      } catch (err) {
+        // Ignore revocation errors
+      }
+      blobUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupBlobUrl();
+    };
+  }, [cleanupBlobUrl]);
 
   // Track initial scene view
   useEffect(() => {
@@ -109,19 +151,47 @@ export function FirstCreationScene() {
     });
   }, [currentMode, activeTool.id, selectedProfessions]);
 
-  // Handle custom file upload
+  // Sync prompt changes with durable state
+  const handlePromptChange = (val: string) => {
+    setPrompt(val);
+    setCreationDurableState({ firstCreationPrompt: val });
+  };
+
+  // Handle custom file upload with validation and memory safety
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
     const file = e.target.files?.[0];
-    if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      setCustomUploadedImage(imageUrl);
-      setSelectedSourceImage(imageUrl);
-      trackOnboardingEvent('onboarding_creation_input_added', {
-        type: 'file_upload',
-        mode: currentMode,
-        fileSize: file.size,
-      });
+    if (!file) return;
+
+    // Validate type
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setUploadError('لطفاً یک تصویر با فرمت معتبر (PNG, JPG, WebP) انتخاب کنید.');
+      return;
     }
+
+    // Validate size
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setUploadError('حجم تصویر نباید بیشتر از ۱۰ مگابایت باشد.');
+      return;
+    }
+
+    // Revoke previous blob if any
+    cleanupBlobUrl();
+
+    const imageUrl = URL.createObjectURL(file);
+    blobUrlRef.current = imageUrl;
+    setCustomUploadedImage(imageUrl);
+    setSelectedSourceImage(imageUrl);
+
+    setCreationDurableState({
+      firstCreationInputUrl: imageUrl,
+    });
+
+    trackOnboardingEvent('onboarding_creation_input_added', {
+      type: 'file_upload',
+      mode: currentMode,
+      fileSize: file.size,
+    });
   };
 
   // Trigger generation handler
@@ -129,8 +199,18 @@ export function FirstCreationScene() {
     if (status === 'generating') return;
 
     setStatus('generating');
+    setProgressStage(null);
     generationStartTimeRef.current = Date.now();
     const timeToFirstCreation = Math.round((Date.now() - sceneLoadTimeRef.current) / 1000);
+
+    setCreationDurableState({
+      firstCreationStatus: 'generating',
+      creationStartedAt: Date.now(),
+      firstCreationTool: activeTool.id,
+      firstCreationPrompt: prompt,
+      firstCreationTemplate: currentMode === 'fun' ? selectedFunTemplate.id : null,
+      firstCreationInputUrl: selectedSourceImage,
+    });
 
     trackOnboardingEvent('onboarding_creation_started', {
       mode: currentMode,
@@ -165,6 +245,12 @@ export function FirstCreationScene() {
       setResult(genResult);
       setStatus('success');
 
+      setCreationDurableState({
+        firstCreationStatus: 'success',
+        firstCreationResult: genResult,
+        creationCompletedAt: Date.now(),
+      });
+
       trackOnboardingEvent('onboarding_creation_succeeded', {
         mode: currentMode,
         toolId: activeTool.id,
@@ -174,6 +260,7 @@ export function FirstCreationScene() {
     } catch (err) {
       console.error('Creation error:', err);
       setStatus('error');
+      setCreationDurableState({ firstCreationStatus: 'error' });
       trackOnboardingEvent('onboarding_creation_failed', {
         mode: currentMode,
         toolId: activeTool.id,
@@ -209,6 +296,10 @@ export function FirstCreationScene() {
     setStatus('idle');
     setResult(null);
     setProgressStage(null);
+    setCreationDurableState({
+      firstCreationStatus: 'idle',
+      firstCreationResult: null,
+    });
   };
 
   const containerVariants: Variants = {
@@ -260,12 +351,12 @@ export function FirstCreationScene() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/png, image/jpeg, image/webp"
         onChange={handleFileUpload}
         className="hidden"
       />
 
-      {/* Top Experience Sub-Bar: Mode Switcher & LumaCore Reaction */}
+      {/* Top Experience Sub-Bar: Mode Switcher & Status */}
       <motion.div
         variants={itemVariants}
         className="w-full flex flex-col sm:flex-row items-center justify-between gap-3 mb-4 pb-3 border-b border-white/[0.06]"
@@ -279,10 +370,10 @@ export function FirstCreationScene() {
             />
           </div>
           <div className="flex flex-col text-right">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-100">
                 {status === 'generating'
-                  ? 'در حال پردازش هوشمند...'
+                  ? 'در حال پردازش...'
                   : status === 'success'
                   ? 'خروجی آماده شد'
                   : 'محیط کاربری سریع لوما'}
@@ -296,11 +387,16 @@ export function FirstCreationScene() {
                     : 'bg-purple-400'
                 }`}
               />
+              {isSimulationMode && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-900 border border-white/10 text-zinc-400">
+                  شبیه‌سازی توسعه
+                </span>
+              )}
             </div>
             <span className="text-[11px] text-zinc-400">
               {currentMode === 'recommended'
-                ? `ابزار اختصاصی شما: ${activeTool.title}`
-                : 'تست سریع و فان با سبک‌های تصویری'}
+                ? `ابزار منتخب: ${activeTool.title}`
+                : 'تست سریع سبک‌های تصویری'}
             </span>
           </div>
         </div>
@@ -349,6 +445,27 @@ export function FirstCreationScene() {
         </div>
       </motion.div>
 
+      {/* Upload Error Banner */}
+      {uploadError && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full mb-3 p-3 rounded-xl bg-rose-950/60 border border-rose-500/30 flex items-center justify-between text-xs text-rose-200"
+        >
+          <div className="flex items-center gap-2">
+            <WarningCircle weight="fill" className="w-4 h-4 text-rose-400" />
+            <span>{uploadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUploadError(null)}
+            className="text-[11px] underline text-rose-300 hover:text-rose-100 cursor-pointer"
+          >
+            بستن
+          </button>
+        </motion.div>
+      )}
+
       {/* ========================================================================= */}
       {/* 1. IDLE / INPUT CONFIGURATION STATE */}
       {/* ========================================================================= */}
@@ -369,7 +486,7 @@ export function FirstCreationScene() {
                     <span>خلق اولین نمونه با {activeTool.title}</span>
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    {activeTool.description} — یک پرامپت آماده را انتخاب کن یا متن دلخواهت را بنویس.
+                    {activeTool.description} — یک ایده آماده را انتخاب کنید یا دستور دلخواه را بنویسید.
                   </p>
                 </div>
                 <button
@@ -404,6 +521,7 @@ export function FirstCreationScene() {
                         onClick={() => {
                           setSelectedSourceImage(sample.imageUrl);
                           setCustomUploadedImage(null);
+                          setCreationDurableState({ firstCreationInputUrl: sample.imageUrl });
                           trackOnboardingEvent('onboarding_fun_sample_selected', { sampleId: sample.id });
                         }}
                         className={`relative aspect-[4/3] rounded-xl overflow-hidden border transition-all cursor-pointer group ${
@@ -429,7 +547,7 @@ export function FirstCreationScene() {
               {/* Smart Quick Prompt Chips */}
               <div className="space-y-2">
                 <span className="text-xs text-zinc-300 block">
-                  پیشنهادهای آماده متناسب با حوزه شما:
+                  ایده‌های آماده برای شروع:
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {toolQuickPrompts.map((preset) => (
@@ -437,10 +555,11 @@ export function FirstCreationScene() {
                       key={preset.id}
                       type="button"
                       onClick={() => {
-                        setPrompt(preset.prompt);
+                        handlePromptChange(preset.prompt);
                         if (preset.sampleImageUrl) {
                           setSelectedSourceImage(preset.sampleImageUrl);
                           setCustomUploadedImage(null);
+                          setCreationDurableState({ firstCreationInputUrl: preset.sampleImageUrl });
                         }
                         trackOnboardingEvent('onboarding_creation_preset_selected', {
                           presetId: preset.id,
@@ -466,13 +585,13 @@ export function FirstCreationScene() {
                   <textarea
                     id="input-creation-prompt"
                     value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
+                    onChange={(e) => handlePromptChange(e.target.value)}
                     rows={3}
                     placeholder="دستور یا ایده خود را اینجا بنویسید..."
                     className="w-full p-3.5 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none leading-relaxed"
                   />
                   <div className="px-3.5 pb-2.5 flex items-center justify-between text-[11px] text-zinc-500 border-t border-white/[0.04] pt-2">
-                    <span>موتور هوش مصنوعی: LUMA Core Pro v3</span>
+                    <span>پردازش مستقیم با لوما</span>
                     <span>{prompt.length} کاراکتر</span>
                   </div>
                 </div>
@@ -488,7 +607,7 @@ export function FirstCreationScene() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(168,85,247,0.4)] active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Lightning weight="fill" className="w-4 h-4 text-purple-200" />
-                  <span>تولید اولین نتیجه (رایگان)</span>
+                  <span>تولید اولین خروجی</span>
                 </button>
               </div>
             </div>
@@ -501,10 +620,10 @@ export function FirstCreationScene() {
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <Smiley weight="fill" className="w-4 h-4 text-purple-400" />
-                  <span>تست سریع و هیجان‌انگیز سبک‌های هنری</span>
+                  <span>تست سریع تبدیل سبک‌های هنری</span>
                 </h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  یک پرتره انتخاب کن یا عکس دلخواهت رو آپلود کن و استایل هنری مورد نظرت رو اعمال کن.
+                  یک تصویر انتخاب کنید و استایل هنری مورد نظر را اعمال کنید.
                 </p>
               </div>
 
@@ -529,6 +648,7 @@ export function FirstCreationScene() {
                       onClick={() => {
                         setSelectedFunAvatar(avatar);
                         setCustomUploadedImage(null);
+                        setCreationDurableState({ firstCreationInputUrl: avatar.imageUrl });
                         trackOnboardingEvent('onboarding_fun_sample_selected', { avatarId: avatar.id });
                       }}
                       className={`relative aspect-[4/3] rounded-xl overflow-hidden border transition-all cursor-pointer group ${
@@ -562,6 +682,7 @@ export function FirstCreationScene() {
                       type="button"
                       onClick={() => {
                         setSelectedFunTemplate(template);
+                        setCreationDurableState({ firstCreationTemplate: template.id });
                         trackOnboardingEvent('onboarding_fun_template_selected', { templateId: template.id });
                       }}
                       className={`p-3.5 rounded-xl border text-right transition-all duration-200 cursor-pointer flex flex-col justify-between gap-2 ${
@@ -605,7 +726,7 @@ export function FirstCreationScene() {
       )}
 
       {/* ========================================================================= */}
-      {/* 2. ACTIVE GENERATING STATE (Rich Multi-Stage Micro-Interactions) */}
+      {/* 2. ACTIVE GENERATING STATE (Semantic Stage Indicators) */}
       {/* ========================================================================= */}
       {status === 'generating' && (
         <motion.div
@@ -622,10 +743,10 @@ export function FirstCreationScene() {
           {/* Dynamic Stage Title & Subtitle */}
           <div className="space-y-1.5">
             <h3 className="text-lg sm:text-xl font-extrabold text-white tracking-tight animate-pulse">
-              {progressStage?.stageName || 'در حال آماده‌سازی و ترکیب هوشمند...'}
+              {progressStage?.stageName || 'در حال آماده‌سازی مدل هوش مصنوعی...'}
             </h3>
             <p className="text-xs text-purple-300/80">
-              {progressStage?.description || 'موتور عصبی لوما در حال ترسیم پیکسل‌هاست...'}
+              {progressStage?.description || 'در حال پردازش پیکسل‌ها و اعمال تنظیمات...'}
             </p>
           </div>
 
@@ -634,14 +755,14 @@ export function FirstCreationScene() {
             <div className="w-full h-2 rounded-full bg-zinc-900 overflow-hidden border border-white/10">
               <motion.div
                 className="h-full bg-gradient-to-r from-purple-500 via-indigo-400 to-pink-500 rounded-full shadow-[0_0_12px_#c084fc]"
-                initial={{ width: '10%' }}
+                initial={{ width: '15%' }}
                 animate={{ width: `${progressStage?.progressPercent || 50}%` }}
                 transition={{ duration: 0.4, ease: 'easeOut' }}
               />
             </div>
             <div className="flex items-center justify-between text-[10px] text-zinc-500 font-mono">
               <span>گام {progressStage?.stepIndex || 1} از {progressStage?.totalSteps || 3}</span>
-              <span>{progressStage?.progressPercent || 50}% تکمیل</span>
+              <span>در حال تولید</span>
             </div>
           </div>
         </motion.div>
@@ -667,7 +788,7 @@ export function FirstCreationScene() {
                   {result.title}
                 </h3>
                 <span className="text-[11px] text-purple-300">
-                  تولید شده در {result.generationTimeSeconds} ثانیه با لوما
+                  تولید شده در {result.generationTimeSeconds} ثانیه
                 </span>
               </div>
             </div>
@@ -686,8 +807,8 @@ export function FirstCreationScene() {
               <BeforeAfterSlider
                 beforeImageUrl={result.beforeImageUrl}
                 afterImageUrl={result.afterImageUrl}
-                beforeLabel={currentMode === 'fun' ? 'عکس مبدا' : 'قبل از ادیت'}
-                afterLabel={currentMode === 'fun' ? result.metadata?.templateTitle as string || 'خروجی استایل لوما' : 'خروجی ادیت لوما'}
+                beforeLabel={currentMode === 'fun' ? 'تصویر مبدا' : 'قبل از ویرایش'}
+                afterLabel={currentMode === 'fun' ? (result.metadata?.templateTitle as string) || 'نتیجه استایل' : 'نتیجه ویرایش'}
               />
             ) : result.videoUrl ? (
               /* Case B: Video Player */
@@ -719,8 +840,8 @@ export function FirstCreationScene() {
                 >
                   {isVideoPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
-                <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-400/30 text-[10px] text-purple-200">
-                  HD 60 FPS
+                <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-400/30 text-[10px] text-purple-200 font-mono">
+                  1080p HD
                 </div>
               </div>
             ) : result.chatResponseText ? (
@@ -764,11 +885,11 @@ export function FirstCreationScene() {
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg transition-colors cursor-pointer"
                 >
                   {isPlayingAudio ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  <span>{isPlayingAudio ? 'توقف پخش' : 'پخش صدای خروجی'}</span>
+                  <span>{isPlayingAudio ? 'توقف پخش' : 'پخش فایل صوتی'}</span>
                 </button>
               </div>
             ) : (
-              /* Case E: Standard High-Res Image Result */
+              /* Case E: Standard Image Result */
               <div className="relative w-full aspect-[16/10] max-h-[380px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-zinc-950 group">
                 <img
                   src={result.imageUrl}
@@ -784,7 +905,7 @@ export function FirstCreationScene() {
             )}
           </div>
 
-          {/* Result Metadata & Quick Action Bar */}
+          {/* Result Metadata & Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             <div className="flex items-center gap-2 text-xs">
               {result.prompt && (
@@ -794,7 +915,7 @@ export function FirstCreationScene() {
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white transition-colors cursor-pointer"
                 >
                   {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{isCopied ? 'پرامپت کپی شد' : 'کپی پرامپت'}</span>
+                  <span>{isCopied ? 'پرامپت کپی شد' : 'کپی دستور'}</span>
                 </button>
               )}
 
@@ -804,7 +925,7 @@ export function FirstCreationScene() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 hover:text-white transition-colors cursor-pointer"
               >
                 <ArrowsClockwise className="w-3.5 h-3.5" />
-                <span>تغییر پرامپت / خروجی جدید</span>
+                <span>خروجی جدید</span>
               </button>
             </div>
 
@@ -816,7 +937,7 @@ export function FirstCreationScene() {
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-[0_0_20px_rgba(168,85,247,0.5)] active:scale-[0.98] transition-all duration-200 cursor-pointer"
             >
               <Rocket weight="bold" className="w-4 h-4" />
-              <span>ذخیره در پنل و ورود به محیط کامل لوما</span>
+              <span>ذخیره و ورود به لوما</span>
             </button>
           </div>
         </motion.div>
@@ -835,9 +956,9 @@ export function FirstCreationScene() {
             <ArrowsClockwise className="w-5 h-5" />
           </div>
           <div className="space-y-1">
-            <h4 className="text-sm font-bold text-white">خطایی در پردازش رخ داد</h4>
+            <h4 className="text-sm font-bold text-white">خطا در دریافت پاسخ</h4>
             <p className="text-xs text-zinc-400">
-              ارتباط با سرویس موقتاً قطع شد. می‌توانید دوباره تلاش کنید یا وارد لوما شوید.
+              ارتباط با سرویس موقتاً با مشکل مواجه شد. می‌توانید دوباره تلاش کنید یا مستقیماً وارد لوما شوید.
             </p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-2">
@@ -853,7 +974,7 @@ export function FirstCreationScene() {
               onClick={handleFinalSaveAndEnter}
               className="px-4 py-2 rounded-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium cursor-pointer"
             >
-              ورود مستقیم به لوما
+              ورود به لوما
             </button>
           </div>
         </motion.div>

@@ -35,6 +35,18 @@ export type RecommendedFirstAction =
 
 export type FirstCreationMode = 'recommended' | 'fun' | null;
 export type FirstCreationStatus = 'idle' | 'input' | 'generating' | 'success' | 'error';
+export type OnboardingLifecycle = 'initializing' | 'in_onboarding' | 'transitioning' | 'in_workspace';
+
+export interface CreationDurableState {
+  firstCreationTool: string | null;
+  firstCreationPrompt: string;
+  firstCreationTemplate: string | null;
+  firstCreationStatus: FirstCreationStatus;
+  firstCreationResult: any | null;
+  firstCreationInputUrl: string | null;
+  creationStartedAt: number | null;
+  creationCompletedAt: number | null;
+}
 
 export interface ToolRecommendation {
   id: string;
@@ -99,6 +111,19 @@ export interface OnboardingState {
   recommendedFirstAction: RecommendedFirstAction;
   selectedRecommendedTool: string | null;
   firstCreationMode: FirstCreationMode;
+  // Durable Creation State
+  firstCreationTool: string | null;
+  firstCreationPrompt: string;
+  firstCreationTemplate: string | null;
+  firstCreationStatus: FirstCreationStatus;
+  firstCreationResult: any | null;
+  firstCreationInputUrl: string | null;
+  creationStartedAt: number | null;
+  creationCompletedAt: number | null;
+  // Phase 6 Lifecycle & Workspace State
+  lifecycle: OnboardingLifecycle;
+  activeWorkspaceSection: LumaSectionId;
+  activeWorkspaceToolId: string | null;
 }
 
 export interface OnboardingContextValue extends OnboardingState {
@@ -120,6 +145,14 @@ export interface OnboardingContextValue extends OnboardingState {
   setSelectedRecommendedTool: (toolId: string | null) => void;
   setFirstCreationMode: (mode: FirstCreationMode) => void;
   proceedToFirstCreation: (mode: 'recommended' | 'fun', toolId?: string) => void;
+  setCreationDurableState: (updates: Partial<CreationDurableState>) => void;
+  resetCreationState: () => void;
+  // Phase 6 Methods
+  setActiveWorkspaceSection: (sectionId: LumaSectionId) => void;
+  setActiveWorkspaceToolId: (toolId: string | null) => void;
+  startTransitionToWorkspace: () => void;
+  finishTransitionToWorkspace: () => void;
+  relaunchOnboarding: (step?: number) => void;
 }
 
 

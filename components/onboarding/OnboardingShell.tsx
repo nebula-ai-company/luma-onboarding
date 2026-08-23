@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
+import React from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { ProgressIndicator } from '@/components/onboarding/ProgressIndicator';
 import { WelcomeScene } from '@/components/onboarding/scenes/WelcomeScene';
@@ -11,29 +11,40 @@ import { ConfirmationScene } from '@/components/onboarding/scenes/ConfirmationSc
 import { EcosystemScene } from '@/components/onboarding/scenes/EcosystemScene';
 import { PersonalizedToolsScene } from '@/components/onboarding/scenes/PersonalizedToolsScene';
 import { FirstCreationScene } from '@/components/onboarding/scenes/FirstCreationScene';
-import { CompletedView } from '@/components/onboarding/scenes/CompletedView';
+import { OnboardingHandoff } from '@/components/onboarding/handoff/OnboardingHandoff';
+import { LumaWorkspace } from '@/components/workspace/LumaWorkspace';
+import { LumaCore } from '@/components/core/LumaCore';
 
 export function OnboardingShell() {
-  const { currentStep, onboardingCompleted, skipOnboarding } = useOnboarding();
+  const { currentStep, onboardingCompleted, skipOnboarding, lifecycle } = useOnboarding();
 
-  // Keyboard navigation support: Escape to skip
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (onboardingCompleted) return;
+  // If session is restored into live workspace
+  if (lifecycle === 'in_workspace') {
+    return <LumaWorkspace />;
+  }
 
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        skipOnboarding();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onboardingCompleted, skipOnboarding]);
+  // Hydration initialization state
+  if (lifecycle === 'initializing') {
+    return (
+      <div
+        dir="rtl"
+        className="min-h-[100dvh] w-full bg-[#07070b] text-zinc-100 flex flex-col items-center justify-center font-sans"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-center shadow-[0_0_25px_rgba(168,85,247,0.3)]">
+            <LumaCore size="sm" interactive={false} />
+          </div>
+          <span className="text-xs font-mono text-purple-300/80 tracking-wider animate-pulse">
+            LUMA AI
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const renderScene = () => {
-    if (onboardingCompleted) {
-      return <CompletedView key="completed-view" />;
+    if (lifecycle === 'transitioning' || onboardingCompleted) {
+      return <OnboardingHandoff key="onboarding-handoff" />;
     }
 
     switch (currentStep) {
@@ -55,13 +66,12 @@ export function OnboardingShell() {
     }
   };
 
-
   return (
     <div
       dir="rtl"
       className="relative min-h-[100dvh] w-full bg-[#07070b] text-zinc-100 flex flex-col justify-between overflow-x-hidden font-sans selection:bg-purple-500/30 selection:text-purple-200"
     >
-      {/* Background Architectural Ambient Light - Controlled & subtle */}
+      {/* Background Architectural Ambient Light */}
       <div
         className="fixed inset-0 pointer-events-none z-0"
         aria-hidden="true"
@@ -84,7 +94,7 @@ export function OnboardingShell() {
           }}
         />
 
-        {/* Fine background grid or hairline noise pattern */}
+        {/* Fine background grid */}
         <div
           className="absolute inset-0 opacity-[0.02]"
           style={{
@@ -111,15 +121,15 @@ export function OnboardingShell() {
           </div>
         </div>
 
-        {/* Minimal Understated Progression Indicator (Visible during active steps) */}
-        {!onboardingCompleted && (
+        {/* Progression Indicator (Visible during active onboarding steps) */}
+        {!onboardingCompleted && lifecycle === 'in_onboarding' && (
           <div className="flex items-center gap-4">
             <ProgressIndicator />
           </div>
         )}
 
-        {/* Skip button in header for quick dismissal */}
-        {!onboardingCompleted ? (
+        {/* Skip button in header */}
+        {!onboardingCompleted && lifecycle === 'in_onboarding' ? (
           <button
             id="btn-header-skip"
             type="button"
@@ -131,7 +141,7 @@ export function OnboardingShell() {
         ) : (
           <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-3 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>آماده به کار</span>
+            <span>آماده‌سازی میز کار</span>
           </div>
         )}
       </header>
@@ -142,18 +152,6 @@ export function OnboardingShell() {
           {renderScene()}
         </AnimatePresence>
       </main>
-
-      {/* Subtle Footer Bar */}
-      <footer className="relative z-20 w-full max-w-6xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-500 border-t border-white/[0.04] pt-3">
-        <div className="flex items-center gap-2">
-          <span className="text-zinc-600 font-mono">LUMA v2.4</span>
-          <span className="text-zinc-700">•</span>
-          <span>طراحی شده برای حرفه‌ای‌ها و تولیدکنندگان محتوا</span>
-        </div>
-        <div className="flex items-center gap-4 text-zinc-500 text-[11px]">
-          <span>کلید میانبر: <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/10 font-mono text-[10px] text-zinc-400">Esc</kbd> برای رد شدن</span>
-        </div>
-      </footer>
     </div>
   );
 }
