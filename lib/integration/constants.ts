@@ -4,10 +4,11 @@ import { ONBOARDING_SCHEMA_VERSION } from './contracts';
 export { ONBOARDING_SCHEMA_VERSION };
 
 export const DEFAULT_FEATURE_FLAGS: OnboardingFeatureFlags = {
-  enableFirstCreation: true,
-  enableFunCreation: true,
+  enableFirstCreation: false,
+  enableFunCreation: false,
   enableResume: true,
   enableDashboardPersonalization: true,
+  enableNewUserOnboarding: true,
 };
 
 export const FUN_WORKFLOW_TEMPLATES: FunWorkflowTemplate[] = [

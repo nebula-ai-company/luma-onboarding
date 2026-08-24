@@ -68,6 +68,11 @@ export interface LumaOnboardingUser {
   displayName?: string;
   email?: string;
   avatarUrl?: string;
+  tier?: 'free' | 'pro' | 'enterprise';
+  lumBalance?: number;
+  onboardingCompleted?: boolean;
+  isExistingLegacyUser?: boolean;
+  createdAt?: string;
 }
 
 export interface UserIntegrationAdapter {
@@ -319,6 +324,7 @@ export interface OnboardingFeatureFlags {
   enableFunCreation: boolean;
   enableResume: boolean;
   enableDashboardPersonalization: boolean;
+  enableNewUserOnboarding?: boolean;
 }
 
 export type OnboardingEnvironment = 'development' | 'integration' | 'production';

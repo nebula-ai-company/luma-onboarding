@@ -1177,4 +1177,8 @@ export function deriveToolRecommendations(
   };
 }
 
+export const LUMA_PROFESSIONS = PROFESSIONS_DATA;
+export const LUMA_INTERESTS = INTERESTS_DATA;
+export const LUMA_AVAILABLE_TOOLS = LUMA_TOOLS_CATALOG;
+
 

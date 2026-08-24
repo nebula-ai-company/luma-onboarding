@@ -95,6 +95,16 @@ export {
 } from './adapters/development';
 
 export {
+  createProductionIntegration,
+  ProductionUserAdapter as ConcreteProductionUserAdapter,
+  ProductionPersistenceAdapter as ConcreteProductionPersistenceAdapter,
+  ProductionNavigationAdapter as ConcreteProductionNavigationAdapter,
+  ProductionAnalyticsAdapter as ConcreteProductionAnalyticsAdapter,
+  ProductionAssetAdapter as ConcreteProductionAssetAdapter,
+  ProductionCreationAdapter as ConcreteProductionCreationAdapter,
+} from './adapters/production';
+
+export {
   createProductionIntegrationStub,
   ProductionUserAdapter,
   ProductionPersistenceAdapter,
