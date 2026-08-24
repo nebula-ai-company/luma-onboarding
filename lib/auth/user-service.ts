@@ -1,13 +1,20 @@
 import type { LumaOnboardingUser, OnboardingFeatureFlags } from '@/lib/integration/contracts';
 import { DEFAULT_FEATURE_FLAGS } from '@/lib/integration/constants';
+import {
+  evaluateUserEligibility,
+  type UserEligibilityResult,
+  type RolloutConfig,
+} from '@/lib/rollout/experiment-service';
 
 /**
  * In-memory / persistent user state store for production LUMA session
  */
 export interface UserSessionData extends LumaOnboardingUser {
   onboardingCompleted: boolean;
+  onboardingSkipped?: boolean;
   onboardingVersion?: string;
   isExistingLegacyUser?: boolean;
+  role?: string;
 }
 
 // Default simulated production session
@@ -19,7 +26,9 @@ const DEFAULT_USER: UserSessionData = {
   tier: 'pro',
   lumBalance: 20, // 20 LUM Welcome balance
   onboardingCompleted: false,
+  onboardingSkipped: false,
   isExistingLegacyUser: false,
+  role: 'user',
   createdAt: '2026-03-01T10:00:00.000Z',
 };
 
@@ -46,11 +55,15 @@ export async function updateUserSession(updates: Partial<UserSessionData>): Prom
 /**
  * Reset user session back to fresh new user
  */
-export async function resetUserSession(type: 'new_user' | 'existing_completed' | 'legacy_user' = 'new_user'): Promise<UserSessionData> {
+export async function resetUserSession(
+  type: 'new_user' | 'existing_completed' | 'legacy_user' | 'custom_email' = 'new_user',
+  customEmail?: string
+): Promise<UserSessionData> {
   if (type === 'existing_completed') {
     currentUserState = {
       ...DEFAULT_USER,
       onboardingCompleted: true,
+      onboardingSkipped: false,
       onboardingVersion: '2.0.0',
       isExistingLegacyUser: false,
     };
@@ -58,13 +71,26 @@ export async function resetUserSession(type: 'new_user' | 'existing_completed' |
     currentUserState = {
       ...DEFAULT_USER,
       onboardingCompleted: true, // Legacy users must never be forced into onboarding
+      onboardingSkipped: false,
       isExistingLegacyUser: true,
       createdAt: '2024-01-15T08:00:00.000Z',
+    };
+  } else if (type === 'custom_email' && customEmail) {
+    currentUserState = {
+      ...DEFAULT_USER,
+      id: `usr_${Math.random().toString(36).slice(2, 9)}`,
+      email: customEmail,
+      displayName: customEmail.split('@')[0],
+      onboardingCompleted: false,
+      onboardingSkipped: false,
+      onboardingVersion: undefined,
+      isExistingLegacyUser: false,
     };
   } else {
     currentUserState = {
       ...DEFAULT_USER,
       onboardingCompleted: false,
+      onboardingSkipped: false,
       onboardingVersion: undefined,
       isExistingLegacyUser: false,
     };
@@ -76,32 +102,28 @@ export async function resetUserSession(type: 'new_user' | 'existing_completed' |
  * Checks whether onboarding is strictly required for the given user.
  * 
  * Rules:
- * 1. If rollout flag `enableNewUserOnboarding` is false, never show onboarding.
+ * 1. If rollout flag `enableNewUserOnboarding` is false, only whitelisted users get onboarding.
  * 2. If user is an existing legacy user (`isExistingLegacyUser === true`), never show onboarding.
  * 3. If user has already completed onboarding (`onboardingCompleted === true`), never show onboarding.
- * 4. Only newly registered un-onboarded users will see onboarding.
+ * 4. Checks deterministic experiment hash / percentage rollout.
  */
 export function isOnboardingRequired(
-  user: LumaOnboardingUser | null,
-  featureFlags?: Partial<OnboardingFeatureFlags>
+  user: (LumaOnboardingUser & { isExistingLegacyUser?: boolean; onboardingCompleted?: boolean; onboardingSkipped?: boolean; role?: string }) | null,
+  featureFlags?: Partial<OnboardingFeatureFlags>,
+  overrideConfig?: Partial<RolloutConfig>
 ): boolean {
-  const flags = { ...DEFAULT_FEATURE_FLAGS, ...featureFlags };
   if (!user) return false;
-
-  // 1. Check rollout feature flag
-  if (flags.enableNewUserOnboarding === false) {
-    return false;
-  }
-
-  // 2. Legacy users registered before rollout are never forced
-  if (user.isExistingLegacyUser) {
-    return false;
-  }
-
-  // 3. If user completed onboarding
-  if (user.onboardingCompleted) {
-    return false;
-  }
-
-  return true;
+  const evalResult = evaluateUserEligibility(user, overrideConfig);
+  return evalResult.shouldShowOnboarding;
 }
+
+/**
+ * Get complete eligibility and experiment assignment details for the user
+ */
+export function getUserEligibilityDetails(
+  user: (LumaOnboardingUser & { isExistingLegacyUser?: boolean; onboardingCompleted?: boolean; onboardingSkipped?: boolean; role?: string }) | null,
+  overrideConfig?: Partial<RolloutConfig>
+): UserEligibilityResult {
+  return evaluateUserEligibility(user, overrideConfig);
+}
+

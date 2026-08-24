@@ -1,21 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getActiveUserSession, updateUserSession, resetUserSession } from '@/lib/auth/user-service';
+import {
+  getActiveUserSession,
+  updateUserSession,
+  resetUserSession,
+  getUserEligibilityDetails,
+} from '@/lib/auth/user-service';
 
 export async function GET() {
   const user = await getActiveUserSession();
-  return NextResponse.json({ user });
+  const eligibility = getUserEligibilityDetails(user);
+  return NextResponse.json({
+    user,
+    eligibility,
+    experiment: eligibility.experiment,
+  });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     if (body.action === 'reset_type') {
-      const user = await resetUserSession(body.type);
-      return NextResponse.json({ user });
+      const user = await resetUserSession(body.type, body.customEmail);
+      const eligibility = getUserEligibilityDetails(user);
+      return NextResponse.json({ user, eligibility, experiment: eligibility.experiment });
     }
     const user = await updateUserSession(body.updates || {});
-    return NextResponse.json({ user });
+    const eligibility = getUserEligibilityDetails(user);
+    return NextResponse.json({ user, eligibility, experiment: eligibility.experiment });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }
 }
+

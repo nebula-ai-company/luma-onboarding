@@ -7,8 +7,8 @@ import {
   LumaOnboarding,
   createProductionIntegration,
 } from '@/lib/integration';
-import { isOnboardingRequired } from '@/lib/auth/user-service';
-import type { LumaOnboardingUser, LumaOnboardingIntegration } from '@/lib/integration/contracts';
+import { trackOnboardingEvent, setActiveExperimentContext } from '@/lib/analytics';
+import type { LumaOnboardingIntegration } from '@/lib/integration/contracts';
 
 export default function RootEntryPage() {
   const router = useRouter();
@@ -27,22 +27,33 @@ export default function RootEntryPage() {
         const res = await fetch('/api/v1/user/me', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
-          const user: LumaOnboardingUser = data.user;
-          const required = isOnboardingRequired(user, prodIntegration.featureFlags);
+          const { eligibility, experiment } = data;
 
-          if (!required) {
-            // Existing or completed user -> direct handoff to dashboard
+          if (experiment) {
+            setActiveExperimentContext(experiment);
+            trackOnboardingEvent('onboarding_experiment_assigned', {
+              experimentId: experiment.experimentId,
+              experimentVariant: experiment.variant,
+              rolloutPercentage: experiment.rolloutPercentage,
+              onboardingStage: experiment.stage,
+              userBucket: experiment.userBucket,
+              isInternalWhitelist: experiment.isInternalWhitelist,
+            });
+          }
+
+          if (!eligibility?.shouldShowOnboarding) {
+            // Control group or legacy/completed user -> direct handoff to dashboard
             router.replace('/dashboard');
             return;
           }
 
           setNeedsOnboarding(true);
         } else {
-          setNeedsOnboarding(true);
+          router.replace('/dashboard');
         }
       } catch (err) {
-        console.warn('[RootEntry] Eligibility check error, fallback to onboarding:', err);
-        setNeedsOnboarding(true);
+        console.warn('[RootEntry] Eligibility check error, fallback to dashboard:', err);
+        router.replace('/dashboard');
       } finally {
         setCheckingEligibility(false);
       }
@@ -68,6 +79,9 @@ export default function RootEntryPage() {
         <LumaOnboarding
           mode="resume"
           onComplete={(_data) => {
+            trackOnboardingEvent('first_useful_result_succeeded', {
+              stage: 'onboarding_completion',
+            });
             router.push('/dashboard');
           }}
           onSkip={() => {
@@ -78,3 +92,4 @@ export default function RootEntryPage() {
     </main>
   );
 }
+

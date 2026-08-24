@@ -172,6 +172,15 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
                     <Sparkle className="w-4 h-4 text-emerald-400" />
                     <span>ویرایش تخصص‌ها و علایق</span>
                   </Link>
+                  <Link
+                    href="/dashboard/rollout"
+                    onClick={() => setUserDropdownOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2 text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 font-medium"
+                    id="nav-rollout-dashboard-link"
+                  >
+                    <Sparkle className="w-4 h-4 text-amber-400" />
+                    <span>پایش و رول‌اوت آنبوردینگ (فاز ۱۱)</span>
+                  </Link>
                 </div>
 
                 <div className="pt-1 border-t border-white/5">
