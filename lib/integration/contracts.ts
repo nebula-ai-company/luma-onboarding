@@ -1,5 +1,7 @@
 import type { PersonalizationArchetype, LumaSectionId, RecommendedFirstAction, FirstCreationMode } from '@/types/onboarding';
 
+export type { PersonalizationArchetype, LumaSectionId, RecommendedFirstAction, FirstCreationMode };
+
 // ============================================================================
 // 1. CANONICAL IDENTIFIERS & METADATA
 // ============================================================================
@@ -116,9 +118,11 @@ export interface PersistedOnboardingProfile {
 
 export interface OnboardingPersistenceAdapter {
   loadProfile(userId: string): Promise<PersistedOnboardingProfile | null>;
+  loadProgress?(userId: string): Promise<PersistedOnboardingProgress | null>;
   saveProgress(userId: string, progress: PersistedOnboardingProgress): Promise<void>;
   complete(userId: string, profile: PersistedOnboardingProfile): Promise<void>;
   updatePreferences(userId: string, preferences: OnboardingPreferences): Promise<void>;
+  reset?(userId: string): Promise<void>;
 }
 
 // ============================================================================
@@ -208,19 +212,27 @@ export interface FunWorkflowTemplate {
   productionWorkflowId?: string;
 }
 
+export type CreationStatusCallback = (
+  status: CreationSemanticStatus,
+  message?: string,
+  progressPercent?: number
+) => void;
+
+export interface CreationExecuteOptions {
+  signal?: AbortSignal;
+  onStatus?: CreationStatusCallback;
+}
+
+export type CreationExecuteParams = OnboardingCreationRequest;
+export type CreationJobResult = OnboardingCreationResult;
+export type CreationIntegrationAdapter = OnboardingCreationAdapter;
+
 export interface OnboardingCreationAdapter {
   readonly isSimulation: boolean;
 
   create(
     request: OnboardingCreationRequest,
-    options?: {
-      signal?: AbortSignal;
-      onStatus?: (
-        status: CreationSemanticStatus,
-        message?: string,
-        progressPercent?: number
-      ) => void;
-    }
+    options?: CreationExecuteOptions
   ): Promise<OnboardingCreationResult>;
 
   isWorkflowAvailable?(workflowTemplateId?: string): Promise<boolean> | boolean;

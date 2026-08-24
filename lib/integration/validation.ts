@@ -150,6 +150,20 @@ export function migrateOnboardingProfile(raw: unknown): PersistedOnboardingProfi
 }
 
 /**
+ * Validates that a persisted profile matches schema requirements
+ */
+export function validatePersistedProfile(profile: unknown): profile is PersistedOnboardingProfile {
+  if (!profile || typeof profile !== 'object') return false;
+  const p = profile as Partial<PersistedOnboardingProfile>;
+  return (
+    p.onboardingVersion === ONBOARDING_SCHEMA_VERSION &&
+    (p.lifecycle === 'completed' || p.lifecycle === 'skipped') &&
+    Boolean(p.preferences && Array.isArray(p.preferences.professions)) &&
+    Boolean(p.primarySections && Array.isArray(p.primarySections))
+  );
+}
+
+/**
  * Returns dashboard personalization config derived from a persisted profile
  */
 export function getDashboardPersonalization(

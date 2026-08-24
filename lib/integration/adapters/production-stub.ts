@@ -54,6 +54,20 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
     }
   }
 
+  async loadProgress(userId: string): Promise<PersistedOnboardingProgress | null> {
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/progress?userId=${encodeURIComponent(userId)}`);
+      if (!res.ok) {
+        if (res.status === 404) return null;
+        throw new Error(`Failed to load onboarding progress: ${res.statusText}`);
+      }
+      return await res.json();
+    } catch (err) {
+      console.error('[ProductionPersistenceAdapter] loadProgress error:', err);
+      throw createIntegrationError('PERSISTENCE_FAILED', err);
+    }
+  }
+
   async saveProgress(userId: string, progress: PersistedOnboardingProgress): Promise<void> {
     try {
       const res = await fetch(`${this.apiBaseUrl}/progress`, {
@@ -98,6 +112,22 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
       }
     } catch (err) {
       console.error('[ProductionPersistenceAdapter] updatePreferences error:', err);
+      throw createIntegrationError('PERSISTENCE_FAILED', err);
+    }
+  }
+
+  async reset(userId: string): Promise<void> {
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to reset onboarding: ${res.statusText}`);
+      }
+    } catch (err) {
+      console.error('[ProductionPersistenceAdapter] reset error:', err);
       throw createIntegrationError('PERSISTENCE_FAILED', err);
     }
   }
@@ -196,42 +226,50 @@ export class ProductionCreationAdapter implements OnboardingCreationAdapter {
  * Production Router-based Navigation Adapter (e.g. Next.js router)
  */
 export class ProductionNavigationAdapter implements NavigationIntegrationAdapter {
-  constructor(private router: { push: (url: string) => void; replace?: (url: string) => void }) {}
+  constructor(private router?: { push: (url: string) => void; replace?: (url: string) => void }) {}
+
+  private navigateTo(url: string): void {
+    if (this.router) {
+      this.router.push(url);
+    } else if (typeof window !== 'undefined') {
+      window.location.href = url;
+    }
+  }
 
   goToDashboard(): void {
-    this.router.push('/dashboard');
+    this.navigateTo('/dashboard');
   }
 
   goToTool(toolId: string): void {
-    this.router.push(`/dashboard/tools/${encodeURIComponent(toolId)}`);
+    this.navigateTo(`/dashboard/tools/${encodeURIComponent(toolId)}`);
   }
 
   goToFiles(highlightAssetId?: string): void {
     if (highlightAssetId) {
-      this.router.push(`/dashboard/files?asset=${encodeURIComponent(highlightAssetId)}`);
+      this.navigateTo(`/dashboard/files?asset=${encodeURIComponent(highlightAssetId)}`);
     } else {
-      this.router.push('/dashboard/files');
+      this.navigateTo('/dashboard/files');
     }
   }
 
   goToWorkflow(workflowId?: string): void {
     if (workflowId) {
-      this.router.push(`/dashboard/workflow/${encodeURIComponent(workflowId)}`);
+      this.navigateTo(`/dashboard/workflow/${encodeURIComponent(workflowId)}`);
     } else {
-      this.router.push('/dashboard/workflow');
+      this.navigateTo('/dashboard/workflow');
     }
   }
 
   goToAssistant(): void {
-    this.router.push('/dashboard/assistant');
+    this.navigateTo('/dashboard/assistant');
   }
 
   goToDevelopers(): void {
-    this.router.push('/dashboard/developers');
+    this.navigateTo('/dashboard/developers');
   }
 
   goToBilling(): void {
-    this.router.push('/dashboard/billing');
+    this.navigateTo('/dashboard/billing');
   }
 
   navigate(destination: OnboardingDestination): void {
@@ -277,4 +315,23 @@ export class ProductionAnalyticsAdapter implements AnalyticsIntegrationAdapter {
       console.warn('[Analytics Error Suppressed]', err);
     }
   }
+}
+
+export interface ProductionStubConfig {
+  apiBaseUrl?: string;
+  router?: { push: (path: string) => void; replace?: (path: string) => void };
+  fetchUserFn?: () => Promise<LumaOnboardingUser | null>;
+  trackerFn?: (event: string, props?: Record<string, unknown>) => void;
+}
+
+export function createProductionIntegrationStub(config: ProductionStubConfig = {}): LumaOnboardingIntegration {
+  return {
+    environment: 'production',
+    user: new ProductionUserAdapter(config.fetchUserFn),
+    persistence: new ProductionPersistenceAdapter(config.apiBaseUrl ? `${config.apiBaseUrl}/onboarding` : undefined),
+    assets: new ProductionAssetAdapter(config.apiBaseUrl ? `${config.apiBaseUrl}/assets/upload` : undefined),
+    creation: new ProductionCreationAdapter(config.apiBaseUrl ? `${config.apiBaseUrl}/creation` : undefined),
+    navigation: new ProductionNavigationAdapter(config.router),
+    analytics: new ProductionAnalyticsAdapter(config.trackerFn),
+  };
 }

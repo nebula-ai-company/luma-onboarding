@@ -241,11 +241,47 @@ export function OnboardingProvider({
             hasCreatedResult,
           });
         } else {
-          // Fresh user
-          setState((prev) => ({
-            ...prev,
-            lifecycle: 'in_onboarding',
-          }));
+          // Check if there is in-flight progress saved
+          const progress = integration.persistence.loadProgress
+            ? await integration.persistence.loadProgress(userId)
+            : null;
+
+          if (progress && progress.currentStep > 0) {
+            const professions = progress.preferences?.professions || [];
+            const interests = progress.preferences?.interests || [];
+            const archetypes = deriveArchetypes(professions, interests);
+            const { primary } = derivePrimarySections(professions, interests);
+            const { recommendations, recommendedFirstAction, primaryRecommendation } =
+              deriveToolRecommendations(professions, interests);
+
+            setState((prev) => ({
+              ...prev,
+              lifecycle: 'in_onboarding',
+              currentStep: Math.min(progress.currentStep, prev.totalSteps - 1),
+              selectedProfessions: professions,
+              selectedInterests: interests,
+              derivedArchetypes: archetypes,
+              primarySections: primary,
+              toolRecommendations: recommendations,
+              recommendedFirstAction,
+              selectedRecommendedTool:
+                progress.selectedRecommendedTool ||
+                primaryRecommendation?.id ||
+                'generate-image',
+              firstCreationMode: progress.firstCreationMode || null,
+            }));
+
+            trackOnboardingEvent('onboarding_resumed', {
+              inFlightStep: progress.currentStep,
+            });
+          } else {
+            // Fresh user
+            setState((prev) => ({
+              ...prev,
+              lifecycle: 'in_onboarding',
+              currentStep: 0,
+            }));
+          }
         }
       } catch (err) {
         console.warn('[LUMA Context] Session hydration error:', err);

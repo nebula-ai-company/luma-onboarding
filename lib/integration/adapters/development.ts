@@ -66,6 +66,19 @@ export class DevelopmentPersistenceAdapter implements OnboardingPersistenceAdapt
     }
   }
 
+  async loadProgress(userId: string): Promise<PersistedOnboardingProgress | null> {
+    if (typeof window === 'undefined') return null;
+    try {
+      const key = `${this.getStorageKey(userId)}_progress`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (err) {
+      console.warn('[DevelopmentPersistenceAdapter] Failed to load progress:', err);
+      return null;
+    }
+  }
+
   async saveProgress(userId: string, progress: PersistedOnboardingProgress): Promise<void> {
     if (typeof window === 'undefined') return;
     try {
@@ -80,6 +93,7 @@ export class DevelopmentPersistenceAdapter implements OnboardingPersistenceAdapt
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(this.getStorageKey(userId), JSON.stringify(profile));
+      localStorage.removeItem(`${this.getStorageKey(userId)}_progress`);
     } catch (err) {
       console.warn('[DevelopmentPersistenceAdapter] Failed to save completed profile:', err);
     }
@@ -96,6 +110,16 @@ export class DevelopmentPersistenceAdapter implements OnboardingPersistenceAdapt
       }
     } catch (err) {
       console.warn('[DevelopmentPersistenceAdapter] Failed to update preferences:', err);
+    }
+  }
+
+  async reset(userId: string): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.removeItem(this.getStorageKey(userId));
+      localStorage.removeItem(`${this.getStorageKey(userId)}_progress`);
+    } catch (err) {
+      console.warn('[DevelopmentPersistenceAdapter] Failed to reset storage:', err);
     }
   }
 }

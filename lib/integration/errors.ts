@@ -11,6 +11,17 @@ export const ERROR_MESSAGES_FA: Record<OnboardingIntegrationErrorCode, string> =
   UNKNOWN: 'خطای پیش‌بینی‌نشده‌ای رخ داد. لطفاً دوباره تلاش کنید.',
 };
 
+export type { OnboardingIntegrationError, OnboardingIntegrationErrorCode };
+
+export function isIntegrationError(err: unknown): err is OnboardingIntegrationError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    'userMessagePersian' in err
+  );
+}
+
 export function createIntegrationError(
   code: OnboardingIntegrationErrorCode,
   originalError?: unknown,

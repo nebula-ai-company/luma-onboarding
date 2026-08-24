@@ -141,3 +141,8 @@ export function useLumaFeatureFlags(): OnboardingFeatureFlags {
   const { featureFlags } = useLumaIntegration();
   return featureFlags;
 }
+
+export function useLumaCurrentUser() {
+  const { currentUser, isLoadingUser } = useLumaIntegration();
+  return { user: currentUser, isLoading: isLoadingUser };
+}
