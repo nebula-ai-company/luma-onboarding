@@ -65,7 +65,7 @@ export function RecommendationBanner({ profile }: RecommendationBannerProps) {
           <div className="space-y-1">
             <h3 className="text-lg md:text-xl font-bold text-white tracking-tight flex items-center gap-2">
               <span>{tool.title}</span>
-              <span className="text-xs text-zinc-400 font-normal">({tool.tagline})</span>
+              <span className="text-xs text-zinc-400 font-normal">({tool.category})</span>
             </h3>
             <p className="text-xs md:text-sm text-zinc-300 leading-relaxed">
               {tool.description}

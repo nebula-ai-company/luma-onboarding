@@ -70,7 +70,7 @@ export default function RootEntryPage() {
           onComplete={(_data) => {
             router.push('/dashboard');
           }}
-          onSkip={(_reason) => {
+          onSkip={() => {
             router.push('/dashboard');
           }}
         />

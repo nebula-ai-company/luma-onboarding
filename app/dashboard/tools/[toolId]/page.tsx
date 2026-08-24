@@ -87,7 +87,7 @@ export default function ToolDetailPage() {
                 <Sparkle weight="bold" className="w-4 h-4" />
               </div>
               <span>{tool.title}</span>
-              <span className="text-xs font-normal text-zinc-400">({tool.tagline})</span>
+              <span className="text-xs font-normal text-zinc-400">({tool.category})</span>
             </h1>
           </div>
 

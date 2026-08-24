@@ -85,6 +85,11 @@ export function OnboardingProvider({
   const { integration, featureFlags, currentUser, isLoadingUser } = useLumaIntegration();
   const [state, setState] = useState<OnboardingState>(initialState);
   const hydratedRef = useRef(false);
+  const stateRef = useRef<OnboardingState>(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Hook analytics adapter globally
   useEffect(() => {
@@ -311,137 +316,138 @@ export function OnboardingProvider({
   ]);
 
   const nextStep = useCallback(() => {
-    setState((prev) => {
-      const next = prev.currentStep + 1;
-      const nextStepIndex = Math.min(next, prev.totalSteps - 1);
+    const current = stateRef.current;
+    const next = current.currentStep + 1;
+    const nextStepIndex = Math.min(next, current.totalSteps - 1);
 
-      // Track step advancement
-      if (nextStepIndex === 1) trackOnboardingEvent('onboarding_profession_viewed');
-      else if (nextStepIndex === 2) trackOnboardingEvent('onboarding_interest_viewed');
-      else if (nextStepIndex === 3) {
-        trackOnboardingEvent('onboarding_profile_completed', {
-          professions: prev.selectedProfessions,
-          interests: prev.selectedInterests,
-          derivedArchetypes: prev.derivedArchetypes,
-        });
-      } else if (nextStepIndex === 4) {
-        trackOnboardingEvent('onboarding_ecosystem_viewed', {
-          primarySections: prev.primarySections,
-          derivedArchetypes: prev.derivedArchetypes,
-        });
-      } else if (nextStepIndex === 5) {
-        trackOnboardingEvent('onboarding_recommendations_viewed', {
-          primaryRecommendation: prev.toolRecommendations[0]?.id,
-          recommendationsCount: prev.toolRecommendations.length,
-          recommendedFirstAction: prev.recommendedFirstAction,
-        });
-      }
-
-      const updated = {
-        ...prev,
-        direction: 1 as const,
-        currentStep: nextStepIndex,
-      };
-
-      // Autosave progress if user ID available
-      const userId = currentUser?.id || 'demo_user_1';
-      integration.persistence.saveProgress(userId, buildProgressPayload(updated)).catch((err) => {
-        console.warn('[Persistence] Autosave progress failed:', err);
+    // Track step advancement
+    if (nextStepIndex === 1) trackOnboardingEvent('onboarding_profession_viewed');
+    else if (nextStepIndex === 2) trackOnboardingEvent('onboarding_interest_viewed');
+    else if (nextStepIndex === 3) {
+      trackOnboardingEvent('onboarding_profile_completed', {
+        professions: current.selectedProfessions,
+        interests: current.selectedInterests,
+        derivedArchetypes: current.derivedArchetypes,
       });
+    } else if (nextStepIndex === 4) {
+      trackOnboardingEvent('onboarding_ecosystem_viewed', {
+        primarySections: current.primarySections,
+        derivedArchetypes: current.derivedArchetypes,
+      });
+    } else if (nextStepIndex === 5) {
+      trackOnboardingEvent('onboarding_recommendations_viewed', {
+        primaryRecommendation: current.toolRecommendations[0]?.id,
+        recommendationsCount: current.toolRecommendations.length,
+        recommendedFirstAction: current.recommendedFirstAction,
+      });
+    }
 
-      return updated;
+    const updated: OnboardingState = {
+      ...current,
+      direction: 1,
+      currentStep: nextStepIndex,
+    };
+
+    // Autosave progress if user ID available
+    const userId = currentUser?.id || 'demo_user_1';
+    integration.persistence.saveProgress(userId, buildProgressPayload(updated)).catch((err) => {
+      console.warn('[Persistence] Autosave progress failed:', err);
     });
+
+    setState(updated);
   }, [currentUser, integration.persistence, buildProgressPayload]);
 
   const prevStep = useCallback(() => {
-    setState((prev) => {
-      const prevStepIndex = Math.max(prev.currentStep - 1, 0);
-      trackOnboardingEvent('onboarding_step_back', { fromStep: prev.currentStep, toStep: prevStepIndex });
-      return {
-        ...prev,
-        direction: -1 as const,
-        currentStep: prevStepIndex,
-      };
-    });
+    const current = stateRef.current;
+    const prevStepIndex = Math.max(current.currentStep - 1, 0);
+    trackOnboardingEvent('onboarding_step_back', { fromStep: current.currentStep, toStep: prevStepIndex });
+    setState((prev) => ({
+      ...prev,
+      direction: -1,
+      currentStep: prevStepIndex,
+    }));
   }, []);
 
   const goToStep = useCallback((step: number) => {
-    setState((prev) => {
-      trackOnboardingEvent('onboarding_preferences_edit_clicked', { fromStep: prev.currentStep, targetStep: step });
-      return {
-        ...prev,
-        direction: (step > prev.currentStep ? 1 : -1) as 1 | -1,
-        currentStep: Math.max(0, Math.min(step, prev.totalSteps - 1)),
-      };
-    });
+    const current = stateRef.current;
+    trackOnboardingEvent('onboarding_preferences_edit_clicked', { fromStep: current.currentStep, targetStep: step });
+    setState((prev) => ({
+      ...prev,
+      direction: (step > prev.currentStep ? 1 : -1) as 1 | -1,
+      currentStep: Math.max(0, Math.min(step, prev.totalSteps - 1)),
+    }));
   }, []);
 
   const skipOnboarding = useCallback(() => {
-    trackOnboardingEvent('onboarding_step_skipped', { fromStep: state.currentStep });
+    const current = stateRef.current;
+    trackOnboardingEvent('onboarding_step_skipped', { fromStep: current.currentStep });
 
-    setState((prev) => {
-      const updated: OnboardingState = {
-        ...prev,
-        isSkipped: true,
-        onboardingCompleted: true,
-        lifecycle: 'transitioning',
-        activeWorkspaceSection: 'ai_tools',
-      };
+    const updated: OnboardingState = {
+      ...current,
+      isSkipped: true,
+      onboardingCompleted: true,
+      lifecycle: 'transitioning',
+      activeWorkspaceSection: 'ai_tools',
+    };
 
-      const profile = buildPersistedProfile(updated, 'skipped', 'skipped');
-      const userId = currentUser?.id || 'demo_user_1';
+    const profile = buildPersistedProfile(updated, 'skipped', 'skipped');
+    const userId = currentUser?.id || 'demo_user_1';
 
-      integration.persistence.complete(userId, profile).catch((err) => {
-        console.warn('[Persistence] Skip persistence failed:', err);
-        onIntegrationError?.({
-          code: 'PERSISTENCE_FAILED',
-          message: 'خطا در ثبت انصراف از آنبوردینگ.',
-          originalError: err,
-        });
+    integration.persistence.complete(userId, profile).catch((err) => {
+      console.warn('[Persistence] Skip persistence failed:', err);
+      onIntegrationError?.({
+        code: 'PERSISTENCE_FAILED',
+        message: 'خطا در ثبت انصراف از آنبوردینگ.',
+        originalError: err,
       });
-
-      onSkip?.();
-
-      return updated;
     });
-  }, [state.currentStep, currentUser, integration.persistence, buildPersistedProfile, onSkip, onIntegrationError]);
+
+    setState(updated);
+
+    // Invoke user-provided onSkip callback safely outside render cycle
+    setTimeout(() => {
+      onSkip?.();
+    }, 0);
+  }, [currentUser, integration.persistence, buildPersistedProfile, onSkip, onIntegrationError]);
 
   const completeOnboarding = useCallback(() => {
-    setState((prev) => {
-      const hasResult = Boolean(prev.firstCreationResult);
-      const completionReason = hasResult ? 'first_creation_success' : 'completed_without_creation';
-      const destination = resolveOnboardingDestination(prev);
+    const current = stateRef.current;
+    const hasResult = Boolean(current.firstCreationResult);
+    const completionReason = hasResult ? 'first_creation_success' : 'completed_without_creation';
+    const destination = resolveOnboardingDestination(current);
 
-      const updated: OnboardingState = {
-        ...prev,
-        onboardingCompleted: true,
-        lifecycle: 'transitioning',
-        activeWorkspaceSection: destination.targetSection,
-        activeWorkspaceToolId: destination.targetToolId || prev.selectedRecommendedTool,
-      };
+    const updated: OnboardingState = {
+      ...current,
+      onboardingCompleted: true,
+      lifecycle: 'transitioning',
+      activeWorkspaceSection: destination.targetSection,
+      activeWorkspaceToolId: destination.targetToolId || current.selectedRecommendedTool,
+    };
 
-      const profile = buildPersistedProfile(updated, 'completed', completionReason);
-      const userId = currentUser?.id || 'demo_user_1';
+    const profile = buildPersistedProfile(updated, 'completed', completionReason);
+    const userId = currentUser?.id || 'demo_user_1';
 
-      integration.persistence.complete(userId, profile).catch((err) => {
-        console.warn('[Persistence] Complete persistence failed:', err);
-        onIntegrationError?.({
-          code: 'PERSISTENCE_FAILED',
-          message: 'خطا در ذخیره‌سازی نمایه تکمیل‌شده آنبوردینگ.',
-          originalError: err,
-        });
+    integration.persistence.complete(userId, profile).catch((err) => {
+      console.warn('[Persistence] Complete persistence failed:', err);
+      onIntegrationError?.({
+        code: 'PERSISTENCE_FAILED',
+        message: 'خطا در ذخیره‌سازی نمایه تکمیل‌شده آنبوردینگ.',
+        originalError: err,
       });
-
-      trackOnboardingEvent('onboarding_completion_started', {
-        completionReason,
-        hasCreatedResult: hasResult,
-        targetSection: destination.targetSection,
-      });
-
-      onComplete?.(profile);
-
-      return updated;
     });
+
+    trackOnboardingEvent('onboarding_completion_started', {
+      completionReason,
+      hasCreatedResult: hasResult,
+      targetSection: destination.targetSection,
+    });
+
+    setState(updated);
+
+    // Invoke user-provided onComplete callback safely outside render cycle
+    setTimeout(() => {
+      onComplete?.(profile);
+    }, 0);
   }, [currentUser, integration.persistence, buildPersistedProfile, onComplete, onIntegrationError]);
 
   const startTransitionToWorkspace = useCallback(() => {
@@ -453,22 +459,24 @@ export function OnboardingProvider({
   }, []);
 
   const finishTransitionToWorkspace = useCallback(() => {
-    setState((prev) => {
-      const destination = resolveOnboardingDestination(prev);
+    const current = stateRef.current;
+    const destination = resolveOnboardingDestination(current);
 
-      // Invoke semantic navigation adapter if requested
+    setState((prev) => ({
+      ...prev,
+      lifecycle: 'in_workspace',
+    }));
+
+    trackOnboardingEvent('onboarding_handoff_completed');
+
+    // Call navigation safely outside of the React render cycle
+    setTimeout(() => {
       if (destination.targetToolId) {
         integration.navigation.goToTool(destination.targetToolId);
       } else {
         integration.navigation.goToDashboard();
       }
-
-      return {
-        ...prev,
-        lifecycle: 'in_workspace',
-      };
-    });
-    trackOnboardingEvent('onboarding_handoff_completed');
+    }, 0);
   }, [integration.navigation]);
 
   const relaunchOnboarding = useCallback((step: number = 0) => {
@@ -490,74 +498,71 @@ export function OnboardingProvider({
   }, []);
 
   const toggleProfession = useCallback((id: string) => {
-    setState((prev) => {
-      const exists = prev.selectedProfessions.includes(id);
-      const updated = exists
-        ? prev.selectedProfessions.filter((p) => p !== id)
-        : [...prev.selectedProfessions, id];
+    const current = stateRef.current;
+    const exists = current.selectedProfessions.includes(id);
+    const updated = exists
+      ? current.selectedProfessions.filter((p) => p !== id)
+      : [...current.selectedProfessions, id];
 
-      if (exists) {
-        trackOnboardingEvent('onboarding_profession_deselected', { professionId: id });
-      } else {
-        trackOnboardingEvent('onboarding_profession_selected', { professionId: id, totalSelected: updated.length });
-      }
+    if (exists) {
+      trackOnboardingEvent('onboarding_profession_deselected', { professionId: id });
+    } else {
+      trackOnboardingEvent('onboarding_profession_selected', { professionId: id, totalSelected: updated.length });
+    }
 
-      const archetypes = deriveArchetypes(updated, prev.selectedInterests);
-      const { primary } = derivePrimarySections(updated, prev.selectedInterests);
-      const { recommendations, recommendedFirstAction, primaryRecommendation } = deriveToolRecommendations(
-        updated,
-        prev.selectedInterests
-      );
+    const archetypes = deriveArchetypes(updated, current.selectedInterests);
+    const { primary } = derivePrimarySections(updated, current.selectedInterests);
+    const { recommendations, recommendedFirstAction, primaryRecommendation } = deriveToolRecommendations(
+      updated,
+      current.selectedInterests
+    );
 
-      return {
-        ...prev,
-        selectedProfessions: updated,
-        derivedArchetypes: archetypes,
-        primarySections: primary,
-        toolRecommendations: recommendations,
-        recommendedFirstAction,
-        selectedRecommendedTool: primaryRecommendation?.id || 'generate-image',
-      };
-    });
+    setState((prev) => ({
+      ...prev,
+      selectedProfessions: updated,
+      derivedArchetypes: archetypes,
+      primarySections: primary,
+      toolRecommendations: recommendations,
+      recommendedFirstAction,
+      selectedRecommendedTool: primaryRecommendation?.id || 'generate-image',
+    }));
   }, []);
 
   const toggleInterest = useCallback((id: string): boolean => {
-    let allowed = true;
-    setState((prev) => {
-      const exists = prev.selectedInterests.includes(id);
-      if (!exists && prev.selectedInterests.length >= MAX_INTERESTS_SELECTION) {
-        allowed = false;
-        return prev;
-      }
+    const current = stateRef.current;
+    const exists = current.selectedInterests.includes(id);
+    if (!exists && current.selectedInterests.length >= MAX_INTERESTS_SELECTION) {
+      return false;
+    }
 
-      const updated = exists
-        ? prev.selectedInterests.filter((i) => i !== id)
-        : [...prev.selectedInterests, id];
+    const updated = exists
+      ? current.selectedInterests.filter((i) => i !== id)
+      : [...current.selectedInterests, id];
 
-      if (exists) {
-        trackOnboardingEvent('onboarding_interest_deselected', { interestId: id });
-      } else {
-        trackOnboardingEvent('onboarding_interest_selected', { interestId: id, totalSelected: updated.length });
-      }
+    if (exists) {
+      trackOnboardingEvent('onboarding_interest_deselected', { interestId: id });
+    } else {
+      trackOnboardingEvent('onboarding_interest_selected', { interestId: id, totalSelected: updated.length });
+    }
 
-      const archetypes = deriveArchetypes(prev.selectedProfessions, updated);
-      const { primary } = derivePrimarySections(prev.selectedProfessions, updated);
-      const { recommendations, recommendedFirstAction, primaryRecommendation } = deriveToolRecommendations(
-        prev.selectedProfessions,
-        updated
-      );
+    const archetypes = deriveArchetypes(current.selectedProfessions, updated);
+    const { primary } = derivePrimarySections(current.selectedProfessions, updated);
+    const { recommendations, recommendedFirstAction, primaryRecommendation } = deriveToolRecommendations(
+      current.selectedProfessions,
+      updated
+    );
 
-      return {
-        ...prev,
-        selectedInterests: updated,
-        derivedArchetypes: archetypes,
-        primarySections: primary,
-        toolRecommendations: recommendations,
-        recommendedFirstAction,
-        selectedRecommendedTool: primaryRecommendation?.id || 'generate-image',
-      };
-    });
-    return allowed;
+    setState((prev) => ({
+      ...prev,
+      selectedInterests: updated,
+      derivedArchetypes: archetypes,
+      primarySections: primary,
+      toolRecommendations: recommendations,
+      recommendedFirstAction,
+      selectedRecommendedTool: primaryRecommendation?.id || 'generate-image',
+    }));
+
+    return true;
   }, []);
 
   const setSelectedProfessions = useCallback((professions: string[]) => {

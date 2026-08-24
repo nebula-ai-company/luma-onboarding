@@ -74,7 +74,7 @@ export default function DashboardPage() {
     const matchesSearch =
       tool.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tool.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tool.tagline.toLowerCase().includes(searchQuery.toLowerCase());
+      tool.category.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
@@ -189,7 +189,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="pt-4 mt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-zinc-500">
-                    <span className="font-mono">{tool.tagline}</span>
+                    <span className="font-mono">{tool.category}</span>
                     <span className="text-emerald-400/80 font-medium">۱ LUM</span>
                   </div>
                 </Link>

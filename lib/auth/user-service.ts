@@ -83,12 +83,13 @@ export async function resetUserSession(type: 'new_user' | 'existing_completed' |
  */
 export function isOnboardingRequired(
   user: LumaOnboardingUser | null,
-  featureFlags: OnboardingFeatureFlags = DEFAULT_FEATURE_FLAGS
+  featureFlags?: Partial<OnboardingFeatureFlags>
 ): boolean {
+  const flags = { ...DEFAULT_FEATURE_FLAGS, ...featureFlags };
   if (!user) return false;
 
   // 1. Check rollout feature flag
-  if (featureFlags.enableNewUserOnboarding === false) {
+  if (flags.enableNewUserOnboarding === false) {
     return false;
   }
 

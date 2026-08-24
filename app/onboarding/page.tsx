@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useTransition } from 'react';
+import React, { Suspense, useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   LumaOnboardingIntegrationProvider,
@@ -9,11 +9,11 @@ import {
 } from '@/lib/integration';
 import type { LumaOnboardingIntegration } from '@/lib/integration/contracts';
 
-export default function OnboardingRoutePage() {
+function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [integration, setIntegration] = useState<LumaOnboardingIntegration | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const rawMode = searchParams.get('mode');
   const mode = rawMode === 'replay' || rawMode === 'preferences' || rawMode === 'first-run'
@@ -52,7 +52,7 @@ export default function OnboardingRoutePage() {
               router.push('/dashboard');
             });
           }}
-          onSkip={(_reason) => {
+          onSkip={() => {
             startTransition(() => {
               router.push('/dashboard');
             });
@@ -60,5 +60,22 @@ export default function OnboardingRoutePage() {
         />
       </LumaOnboardingIntegrationProvider>
     </main>
+  );
+}
+
+export default function OnboardingRoutePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07070b] flex items-center justify-center text-zinc-400">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-400 animate-spin" />
+            <span className="text-sm font-medium">در حال بارگذاری تجربه لوما...</span>
+          </div>
+        </div>
+      }
+    >
+      <OnboardingContent />
+    </Suspense>
   );
 }

@@ -16,6 +16,7 @@ import type {
   CreationExecuteOptions,
   CreationJobResult,
   OnboardingFeatureFlags,
+  OnboardingDestination,
 } from '../contracts';
 import { DEFAULT_FEATURE_FLAGS } from '../constants';
 import { createIntegrationError } from '../errors';
@@ -59,7 +60,7 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
   private fallbackCache: PersistedOnboardingProfile | null = null;
   private inFlightProgress: PersistedOnboardingProgress | null = null;
 
-  async loadProfile(): Promise<PersistedOnboardingProfile | null> {
+  async loadProfile(_userId?: string): Promise<PersistedOnboardingProfile | null> {
     try {
       if (typeof window !== 'undefined') {
         const res = await fetch('/api/v1/onboarding/profile', { cache: 'no-store' });
@@ -76,7 +77,11 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
     }
   }
 
-  async saveProgress(progress: PersistedOnboardingProgress): Promise<void> {
+  async loadProgress?(_userId?: string): Promise<PersistedOnboardingProgress | null> {
+    return this.inFlightProgress;
+  }
+
+  async saveProgress(_userId: string, progress: PersistedOnboardingProgress): Promise<void> {
     this.inFlightProgress = progress;
     try {
       if (typeof window !== 'undefined') {
@@ -91,7 +96,7 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
     }
   }
 
-  async complete(profile: PersistedOnboardingProfile): Promise<void> {
+  async complete(_userId: string, profile: PersistedOnboardingProfile): Promise<void> {
     this.fallbackCache = profile;
     try {
       if (typeof window !== 'undefined') {
@@ -110,7 +115,7 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
     }
   }
 
-  async updatePreferences(preferences: OnboardingPreferences): Promise<void> {
+  async updatePreferences(_userId: string, preferences: OnboardingPreferences): Promise<void> {
     if (this.fallbackCache) {
       this.fallbackCache.preferences = preferences;
       this.fallbackCache.lastCompletedAt = new Date().toISOString();
@@ -128,7 +133,7 @@ export class ProductionPersistenceAdapter implements OnboardingPersistenceAdapte
     }
   }
 
-  async clear(): Promise<void> {
+  async reset(_userId?: string): Promise<void> {
     this.fallbackCache = null;
     this.inFlightProgress = null;
     try {
@@ -156,7 +161,7 @@ export class ProductionNavigationAdapter implements NavigationIntegrationAdapter
     this.routerPush = push;
   }
 
-  private navigate(path: string) {
+  private navigatePath(path: string) {
     if (this.routerPush) {
       this.routerPush(path);
     } else if (typeof window !== 'undefined') {
@@ -164,33 +169,60 @@ export class ProductionNavigationAdapter implements NavigationIntegrationAdapter
     }
   }
 
+  navigate(destination: OnboardingDestination): void {
+    switch (destination.type) {
+      case 'dashboard':
+        this.goToDashboard();
+        break;
+      case 'tool':
+        this.goToTool(destination.toolId);
+        break;
+      case 'workflow':
+        this.goToWorkflow(destination.workflowId);
+        break;
+      case 'files':
+        this.goToFiles(destination.highlightAssetId);
+        break;
+      case 'assistant':
+        this.goToAssistant();
+        break;
+      case 'developers':
+        this.goToDevelopers();
+        break;
+      case 'billing':
+        this.goToBilling();
+        break;
+    }
+  }
+
   goToDashboard(): void {
-    this.navigate('/dashboard');
+    this.navigatePath('/dashboard');
   }
 
   goToTool(toolId: string): void {
-    this.navigate(`/dashboard/tools/${encodeURIComponent(toolId)}?from=onboarding`);
+    this.navigatePath(`/dashboard/tools/${encodeURIComponent(toolId)}?from=onboarding`);
   }
 
-  goToFiles(): void {
-    this.navigate('/dashboard/files');
+  goToFiles(highlightAssetId?: string): void {
+    const query = highlightAssetId ? `?highlight=${encodeURIComponent(highlightAssetId)}` : '';
+    this.navigatePath(`/dashboard/files${query}`);
   }
 
   goToWorkflow(templateId?: string): void {
     const query = templateId ? `?template=${encodeURIComponent(templateId)}` : '';
-    this.navigate(`/dashboard/workflow${query}`);
+    this.navigatePath(`/dashboard/workflow${query}`);
   }
 
   goToAssistant(): void {
-    this.navigate('/dashboard/assistant');
+    this.navigatePath('/dashboard/assistant');
   }
 
   goToDevelopers(): void {
-    this.navigate('/dashboard/developers');
+    this.navigatePath('/dashboard/developers');
   }
 
   goToBilling(): void {
-    this.navigate('/dashboard/billing');
+    this.navigatePath('/dashboard/billing');
   }
 }
 
@@ -224,24 +256,35 @@ export class ProductionAnalyticsAdapter implements AnalyticsIntegrationAdapter {
  * Production Asset Adapter
  */
 export class ProductionAssetAdapter implements AssetIntegrationAdapter {
-  private assetStore = new Map<string, UploadedAsset>();
+  private assetStore = new Map<string, { id: string; url: string; mimeType?: string; createdAt?: string }>();
 
-  async upload(file: File): Promise<UploadedAsset> {
-    const assetId = `ast_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  async upload(
+    file: File,
+    options?: {
+      signal?: AbortSignal;
+      onProgress?: (percent: number) => void;
+    }
+  ): Promise<UploadedAsset> {
+    const id = `ast_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const objectUrl = URL.createObjectURL(file);
-    const asset: UploadedAsset = {
-      assetId,
+    this.assetStore.set(id, {
+      id,
       url: objectUrl,
-      fileName: file.name,
-      fileSizeBytes: file.size,
       mimeType: file.type,
       createdAt: new Date().toISOString(),
+    });
+    if (options?.onProgress) {
+      options.onProgress(100);
+    }
+    return {
+      id,
+      previewUrl: objectUrl,
+      fileSizeBytes: file.size,
+      mimeType: file.type,
     };
-    this.assetStore.set(assetId, asset);
-    return asset;
   }
 
-  async getAsset(assetId: string): Promise<UploadedAsset | null> {
+  async getAsset(assetId: string) {
     return this.assetStore.get(assetId) || null;
   }
 }
@@ -258,7 +301,7 @@ export class ProductionCreationAdapter implements CreationIntegrationAdapter {
     options?: CreationExecuteOptions
   ): Promise<CreationJobResult> {
     throw createIntegrationError(
-      'CREATION_QUOTA_EXCEEDED',
+      'SERVICE_UNAVAILABLE',
       'تولید هوش مصنوعی در این مرحله از طریق صفحه اختصاصی ابزار انجام می‌شود.'
     );
   }
