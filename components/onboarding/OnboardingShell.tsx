@@ -14,9 +14,17 @@ import { FirstCreationScene } from '@/components/onboarding/scenes/FirstCreation
 import { OnboardingHandoff } from '@/components/onboarding/handoff/OnboardingHandoff';
 import { LumaWorkspace } from '@/components/workspace/LumaWorkspace';
 import { LumaCore } from '@/components/core/LumaCore';
+import { SceneErrorBoundary } from '@/components/onboarding/SceneErrorBoundary';
 
 export function OnboardingShell() {
-  const { currentStep, onboardingCompleted, skipOnboarding, lifecycle } = useOnboarding();
+  const {
+    currentStep,
+    onboardingCompleted,
+    skipOnboarding,
+    lifecycle,
+    prevStep,
+    resetOnboarding,
+  } = useOnboarding();
 
   // If session is restored into live workspace
   if (lifecycle === 'in_workspace') {
@@ -148,9 +156,11 @@ export function OnboardingShell() {
 
       {/* Main Experience Content Stage */}
       <main className="relative z-10 w-full max-w-5xl mx-auto flex-1 flex flex-col items-center justify-center px-4 py-4 sm:py-6">
-        <AnimatePresence mode="wait">
-          {renderScene()}
-        </AnimatePresence>
+        <SceneErrorBoundary onPrevStep={prevStep} onReset={resetOnboarding}>
+          <AnimatePresence mode="wait">
+            {renderScene()}
+          </AnimatePresence>
+        </SceneErrorBoundary>
       </main>
     </div>
   );
