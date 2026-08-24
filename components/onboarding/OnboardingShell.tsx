@@ -32,7 +32,7 @@ export function OnboardingShell() {
       >
         <div className="flex flex-col items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-center shadow-[0_0_25px_rgba(168,85,247,0.3)]">
-            <LumaCore size="sm" interactive={false} />
+            <LumaCore variant="compact" showHints={false} />
           </div>
           <span className="text-xs font-mono text-purple-300/80 tracking-wider animate-pulse">
             LUMA AI

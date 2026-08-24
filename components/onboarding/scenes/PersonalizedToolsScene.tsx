@@ -26,8 +26,8 @@ import { useOnboarding } from '@/context/OnboardingContext';
 import { LumaCore } from '@/components/core/LumaCore';
 import { WhyTheseModal } from '@/components/onboarding/WhyTheseModal';
 import {
-  PROFESSIONS,
-  INTERESTS,
+  PROFESSIONS_DATA,
+  INTERESTS_DATA,
   deriveToolRecommendations,
 } from '@/lib/onboarding-data';
 import type { ToolRecommendation } from '@/types/onboarding';
@@ -72,14 +72,14 @@ export function PersonalizedToolsScene() {
 
   // Dictionaries for human labels in Persian
   const professionLabels = React.useMemo(() => {
-    return PROFESSIONS.reduce<Record<string, string>>((acc, p) => {
+    return PROFESSIONS_DATA.reduce<Record<string, string>>((acc, p) => {
       acc[p.id] = p.title;
       return acc;
     }, {});
   }, []);
 
   const interestLabels = React.useMemo(() => {
-    return INTERESTS.reduce<Record<string, string>>((acc, i) => {
+    return INTERESTS_DATA.reduce<Record<string, string>>((acc, i) => {
       acc[i.id] = i.title;
       return acc;
     }, {});
@@ -130,7 +130,7 @@ export function PersonalizedToolsScene() {
   };
 
   const handleOpenWhyModal = () => {
-    trackOnboardingEvent('onboarding_why_these_opened');
+    trackOnboardingEvent('onboarding_recommendation_reason_viewed');
     setIsWhyModalOpen(true);
   };
 
@@ -244,11 +244,7 @@ export function PersonalizedToolsScene() {
               <div className="flex items-center gap-3 text-xs text-zinc-400 font-mono">
                 <span className="flex items-center gap-1">
                   <Clock weight="bold" className="w-3.5 h-3.5 text-zinc-500" />
-                  {primaryRecommendation?.estimatedSeconds}
-                </span>
-                <span className="flex items-center gap-1 text-purple-300">
-                  <Coins weight="bold" className="w-3.5 h-3.5 text-purple-400" />
-                  {primaryRecommendation?.creditCost}
+                  {primaryRecommendation?.isFastResult ? 'سریع (کمتر از ۱۰ ثانیه)' : 'کیفیت فوق‌العاده'}
                 </span>
               </div>
             </div>
@@ -257,11 +253,11 @@ export function PersonalizedToolsScene() {
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-900/40 border border-purple-500/30 flex items-center justify-center text-purple-300 shadow-[0_0_16px_rgba(168,85,247,0.25)]">
-                  {getToolIcon(primaryRecommendation?.icon || 'sparkle', 'w-6 h-6')}
+                  {getToolIcon(primaryRecommendation?.iconName || 'sparkle', 'w-6 h-6')}
                 </div>
                 <div>
                   <span className="text-[11px] font-medium text-zinc-400 block">
-                    {primaryRecommendation?.categoryTitle}
+                    {primaryRecommendation?.category}
                   </span>
                   <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                     {primaryRecommendation?.title}
@@ -281,26 +277,26 @@ export function PersonalizedToolsScene() {
                 <span>دلیل پیشنهاد به شما:</span>
               </div>
               <p className="leading-relaxed text-zinc-300">
-                {primaryRecommendation?.personalizedReason}
+                {primaryRecommendation?.primaryReason}
               </p>
             </div>
 
             {/* Practical Prompt / Action Examples */}
-            {primaryRecommendation?.samplePrompts &&
-              primaryRecommendation.samplePrompts.length > 0 && (
+            {primaryRecommendation?.examples &&
+              primaryRecommendation.examples.length > 0 && (
                 <div className="space-y-2">
                   <span className="text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
                     <Lightning weight="bold" className="w-3.5 h-3.5 text-purple-400" />
-                    نمونه ایده‌های فوری برای شروع:
+                    نمونه ایده‌های کاربردی:
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {primaryRecommendation.samplePrompts.map((prompt, idx) => (
+                    {primaryRecommendation.examples.map((exampleText, idx) => (
                       <div
                         key={idx}
                         className="p-2.5 rounded-xl bg-zinc-900/60 border border-white/[0.04] text-xs text-zinc-300 flex items-start gap-2 hover:border-purple-500/20 transition-colors"
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-purple-400 mt-1.5 flex-shrink-0" />
-                        <span className="line-clamp-2">{prompt}</span>
+                        <span className="line-clamp-2">{exampleText}</span>
                       </div>
                     ))}
                   </div>
@@ -354,25 +350,25 @@ export function PersonalizedToolsScene() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <div className="w-9 h-9 rounded-xl bg-zinc-900 group-hover:bg-purple-950/40 border border-white/[0.08] group-hover:border-purple-500/30 flex items-center justify-center text-zinc-300 group-hover:text-purple-300 transition-colors">
-                        {getToolIcon(tool.icon, 'w-4 h-4')}
+                        {getToolIcon(tool.iconName, 'w-4 h-4')}
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-zinc-100 group-hover:text-white transition-colors">
                           {tool.title}
                         </h4>
                         <span className="text-[11px] text-zinc-400">
-                          {tool.categoryTitle}
+                          {tool.category}
                         </span>
                       </div>
                     </div>
 
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-900 border border-white/[0.06] text-zinc-400">
-                      {tool.estimatedSeconds}
+                      {tool.isFastResult ? 'سریع' : 'پیشرفته'}
                     </span>
                   </div>
 
                   <p className="text-xs text-zinc-400 leading-relaxed line-clamp-2">
-                    {tool.personalizedReason}
+                    {tool.primaryReason}
                   </p>
 
                   <div className="flex items-center justify-between pt-1 text-[11px] text-purple-300/80 group-hover:text-purple-300">

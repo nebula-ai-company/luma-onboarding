@@ -133,11 +133,11 @@ export function WhyTheseModal({
                           {rec.title}
                         </span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
-                          {rec.categoryTitle}
+                          {rec.category}
                         </span>
                       </div>
                       <p className="text-xs text-zinc-400 leading-relaxed">
-                        {rec.personalizedReason}
+                        {rec.primaryReason}
                       </p>
                     </div>
                   </div>

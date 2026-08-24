@@ -118,7 +118,7 @@ export function OnboardingHandoff() {
             {/* LumaCore Transition Anchor */}
             <div className="relative">
               <div className="w-14 h-14 rounded-2xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-center shadow-[0_0_20px_rgba(168,85,247,0.25)]">
-                <LumaCore size="sm" interactive={false} />
+                <LumaCore variant="compact" showHints={false} />
               </div>
               <span className="absolute -bottom-1 -left-1 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-4 ring-zinc-950 shadow-[0_0_8px_#10b981]" />
             </div>

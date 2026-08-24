@@ -422,7 +422,7 @@ export function LumaWorkspace() {
 
                     <div className="pt-4 border-t border-white/[0.04] mt-4 flex items-center justify-between">
                       <span className="text-[10px] text-zinc-500 font-mono">
-                        {tool.executionSpeed === 'fast' ? 'پردازش سریع' : 'پردازش دقیق'}
+                        {tool.isFastResult ? 'پردازش سریع' : 'پردازش دقیق'}
                       </span>
                       <button
                         type="button"
