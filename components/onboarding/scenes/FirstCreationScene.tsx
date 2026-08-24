@@ -27,10 +27,10 @@ import {
   FileImage,
 } from '@phosphor-icons/react';
 import { useOnboarding } from '@/context/OnboardingContext';
+import { useLumaAdapters } from '@/context/LumaIntegrationContext';
 import { LumaCore } from '@/components/core/LumaCore';
 import { LUMA_TOOLS_CATALOG, type LumaToolDefinition } from '@/lib/onboarding-data';
 import {
-  creationAdapter,
   isSimulationMode,
   FUN_TRANSFORM_TEMPLATES,
   SAMPLE_AVATARS,
@@ -41,6 +41,7 @@ import {
   type SampleAvatarOption,
 } from '@/lib/creation-adapter';
 import { trackOnboardingEvent } from '@/lib/analytics';
+import { ERROR_MESSAGES_FA } from '@/lib/integration/errors';
 import { BeforeAfterSlider } from '@/components/onboarding/creation/BeforeAfterSlider';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -67,6 +68,7 @@ export function FirstCreationScene() {
     resetCreationState,
   } = useOnboarding();
 
+  const { creation, assets } = useLumaAdapters();
   const shouldReduceMotion = useReducedMotion();
   const [, startTransition] = useTransition();
 
@@ -100,6 +102,7 @@ export function FirstCreationScene() {
   const [customUploadedImage, setCustomUploadedImage] = useState<string | null>(
     firstCreationInputUrl && firstCreationInputUrl.startsWith('blob:') ? firstCreationInputUrl : null
   );
+  const [uploadedAssetId, setUploadedAssetId] = useState<string | null>(null);
 
   // Status & progress
   const [status, setStatus] = useState<'idle' | 'generating' | 'success' | 'error'>(
@@ -108,6 +111,7 @@ export function FirstCreationScene() {
   const [progressStage, setProgressStage] = useState<CreationProgressStage | null>(null);
   const [result, setResult] = useState<CreationResultData | null>(firstCreationResult || null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [generationErrorMsg, setGenerationErrorMsg] = useState<string | null>(null);
 
   // UI state
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -120,6 +124,7 @@ export function FirstCreationScene() {
   const blobUrlRef = useRef<string | null>(customUploadedImage);
   const sceneLoadTimeRef = useRef<number>(0);
   const generationStartTimeRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Clean up object URLs on unmount or file replacement
   const cleanupBlobUrl = useCallback(() => {
@@ -136,6 +141,9 @@ export function FirstCreationScene() {
   useEffect(() => {
     return () => {
       cleanupBlobUrl();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, [cleanupBlobUrl]);
 
@@ -158,7 +166,7 @@ export function FirstCreationScene() {
   };
 
   // Handle custom file upload with validation and memory safety
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError(null);
     const file = e.target.files?.[0];
     if (!file) return;
@@ -192,6 +200,15 @@ export function FirstCreationScene() {
       mode: currentMode,
       fileSize: file.size,
     });
+
+    try {
+      const uploaded = await assets.upload(file);
+      if (uploaded?.id) {
+        setUploadedAssetId(uploaded.id);
+      }
+    } catch (err) {
+      console.warn('[Asset Upload Notice]', err);
+    }
   };
 
   // Trigger generation handler
@@ -200,8 +217,12 @@ export function FirstCreationScene() {
 
     setStatus('generating');
     setProgressStage(null);
+    setGenerationErrorMsg(null);
     generationStartTimeRef.current = Date.now();
     const timeToFirstCreation = Math.round((Date.now() - sceneLoadTimeRef.current) / 1000);
+
+    const abortCtrl = new AbortController();
+    abortControllerRef.current = abortCtrl;
 
     setCreationDurableState({
       firstCreationStatus: 'generating',
@@ -221,25 +242,63 @@ export function FirstCreationScene() {
     });
 
     try {
-      let genResult: CreationResultData;
+      const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const sourceUrl = customUploadedImage || (currentMode === 'fun' ? selectedFunAvatar.imageUrl : selectedSourceImage);
 
-      if (currentMode === 'fun') {
-        const sourceUrl = customUploadedImage || selectedFunAvatar.imageUrl;
-        genResult = await creationAdapter.generateFunTransform(
-          selectedFunTemplate.id,
-          sourceUrl,
-          (stage) => setProgressStage(stage)
-        );
-      } else {
-        genResult = await creationAdapter.generateRecommended(
-          activeTool.id,
-          {
-            prompt,
-            sourceImageUrl: selectedSourceImage,
+      const creationRes = await creation.create(
+        {
+          requestId,
+          toolId: activeTool.id,
+          mode: currentMode,
+          prompt,
+          inputAssetId: uploadedAssetId || sourceUrl,
+          workflowTemplateId: currentMode === 'fun' ? selectedFunTemplate.id : undefined,
+        },
+        {
+          signal: abortCtrl.signal,
+          onStatus: (semanticStatus, message, progressPercent) => {
+            const stepMap: Record<string, number> = {
+              analyzing: 1,
+              uploading: 2,
+              processing: 3,
+              finalizing: 4,
+              completed: 4,
+            };
+            const currentStepIdx = stepMap[semanticStatus] || 2;
+            setProgressStage({
+              stepIndex: currentStepIdx,
+              totalSteps: 4,
+              stageName: semanticStatus,
+              description: message || 'در حال پردازش با هوش مصنوعی...',
+              progressPercent: progressPercent || currentStepIdx * 25,
+            });
           },
-          (stage) => setProgressStage(stage)
-        );
+        }
+      );
+
+      if (!creationRes.success) {
+        const errorFa =
+          creationRes.errorCode && ERROR_MESSAGES_FA[creationRes.errorCode]
+            ? ERROR_MESSAGES_FA[creationRes.errorCode]
+            : creationRes.errorMessage || 'تولید خروجی با خطا مواجه شد.';
+        throw new Error(errorFa);
       }
+
+      const genResult: CreationResultData = {
+        id: creationRes.assetId || `result_${Date.now()}`,
+        toolId: activeTool.id,
+        mode: currentMode,
+        title: creationRes.title || activeTool.title,
+        imageUrl: creationRes.outputUrl || (creationRes.outputType === 'image' ? creationRes.outputUrl : undefined),
+        videoUrl: creationRes.outputType === 'video' ? creationRes.outputUrl : undefined,
+        chatResponseText: creationRes.chatResponseText,
+        beforeImageUrl: creationRes.beforeImageUrl || sourceUrl,
+        afterImageUrl: creationRes.afterImageUrl || creationRes.outputUrl,
+        prompt,
+        dimensions: creationRes.dimensions || '2048 x 2048',
+        generationTimeSeconds: creationRes.generationTimeSeconds || Math.round((Date.now() - generationStartTimeRef.current) / 1000),
+        createdAt: new Date().toISOString(),
+      };
 
       const timeToFirstResult = Math.round((Date.now() - sceneLoadTimeRef.current) / 1000);
       setResult(genResult);
@@ -257,9 +316,10 @@ export function FirstCreationScene() {
         durationMs: Date.now() - generationStartTimeRef.current,
         timeToFirstResult,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Creation error:', err);
       setStatus('error');
+      setGenerationErrorMsg(err?.message || 'تولید با خطا مواجه شد. لطفاً دوباره تلاش کنید.');
       setCreationDurableState({ firstCreationStatus: 'error' });
       trackOnboardingEvent('onboarding_creation_failed', {
         mode: currentMode,
@@ -958,7 +1018,7 @@ export function FirstCreationScene() {
           <div className="space-y-1">
             <h4 className="text-sm font-bold text-white">خطا در دریافت پاسخ</h4>
             <p className="text-xs text-zinc-400">
-              ارتباط با سرویس موقتاً با مشکل مواجه شد. می‌توانید دوباره تلاش کنید یا مستقیماً وارد لوما شوید.
+              {generationErrorMsg || 'ارتباط با سرویس موقتاً با مشکل مواجه شد. می‌توانید دوباره تلاش کنید یا مستقیماً وارد لوما شوید.'}
             </p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-2">

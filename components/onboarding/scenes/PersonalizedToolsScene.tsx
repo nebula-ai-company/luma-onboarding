@@ -23,6 +23,7 @@ import {
   CheckCircle,
 } from '@phosphor-icons/react';
 import { useOnboarding } from '@/context/OnboardingContext';
+import { useLumaFeatureFlags } from '@/context/LumaIntegrationContext';
 import {
   deriveToolRecommendations,
   LUMA_TOOLS_CATALOG,
@@ -53,9 +54,11 @@ export function PersonalizedToolsScene() {
     selectedRecommendedTool,
     setSelectedRecommendedTool,
     proceedToFirstCreation,
+    completeOnboarding,
     prevStep,
   } = useOnboarding();
 
+  const featureFlags = useLumaFeatureFlags();
   const shouldReduceMotion = useReducedMotion();
 
   // Crash-safe recommendation calculation with fallback guarantee
@@ -209,10 +212,20 @@ export function PersonalizedToolsScene() {
         <button
           id="btn-primary-tool-start"
           type="button"
-          onClick={() => proceedToFirstCreation('recommended', primaryRecommendation.id)}
+          onClick={() => {
+            if (featureFlags.enableFirstCreation) {
+              proceedToFirstCreation('recommended', primaryRecommendation.id);
+            } else {
+              completeOnboarding();
+            }
+          }}
           className="group relative w-full inline-flex items-center justify-center gap-3 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 text-white font-semibold text-sm sm:text-base shadow-[0_0_24px_-4px_rgba(168,85,247,0.5)] hover:shadow-[0_0_32px_0px_rgba(192,132,252,0.65)] ring-1 ring-white/20 hover:scale-[1.01] active:scale-[0.98] transition-all duration-300 cursor-pointer"
         >
-          <span>{primaryRecommendation.primaryCtaText || 'اولین خروجی رو بسازیم'}</span>
+          <span>
+            {featureFlags.enableFirstCreation
+              ? primaryRecommendation.primaryCtaText || 'اولین خروجی رو بسازیم'
+              : `شروع کار با ${primaryRecommendation.title}`}
+          </span>
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-white/15 backdrop-blur-sm group-hover:-translate-x-1 transition-transform duration-300">
             <ArrowLeft weight="bold" className="w-3.5 h-3.5 text-white" />
           </span>
@@ -254,34 +267,36 @@ export function PersonalizedToolsScene() {
         </motion.div>
       )}
 
-      {/* Fun Path Alternative Card */}
-      <motion.div
-        variants={itemVariants}
-        className="w-full max-w-2xl p-4 sm:p-5 rounded-2xl bg-zinc-950/60 border border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4 mb-6"
-      >
-        <div className="flex items-center gap-3 text-right w-full sm:w-auto">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
-            <Smiley weight="duotone" className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="text-xs sm:text-sm font-bold text-zinc-200">
-              یه چیز سرگرم‌کننده امتحان کنیم
-            </h4>
-            <p className="text-[11px] text-zinc-400">
-              عکست رو بده و یکی از قالب‌های خلاقانه لوما رو امتحان کن.
-            </p>
-          </div>
-        </div>
-
-        <button
-          id="btn-fun-mode-start"
-          type="button"
-          onClick={() => proceedToFirstCreation('fun')}
-          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-medium text-zinc-200 hover:text-white transition-all duration-200 cursor-pointer shrink-0"
+      {/* Fun Path Alternative Card (Conditionally rendered by feature flag) */}
+      {featureFlags.enableFunCreation && (
+        <motion.div
+          variants={itemVariants}
+          className="w-full max-w-2xl p-4 sm:p-5 rounded-2xl bg-zinc-950/60 border border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4 mb-6"
         >
-          شروع قالب سرگرم‌کننده
-        </button>
-      </motion.div>
+          <div className="flex items-center gap-3 text-right w-full sm:w-auto">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center justify-center shrink-0">
+              <Smiley weight="duotone" className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-zinc-200">
+                یه چیز سرگرم‌کننده امتحان کنیم
+              </h4>
+              <p className="text-[11px] text-zinc-400">
+                عکست رو بده و یکی از قالب‌های خلاقانه لوما رو امتحان کن.
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="btn-fun-mode-start"
+            type="button"
+            onClick={() => proceedToFirstCreation('fun')}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-medium text-zinc-200 hover:text-white transition-all duration-200 cursor-pointer shrink-0"
+          >
+            شروع قالب سرگرم‌کننده
+          </button>
+        </motion.div>
+      )}
 
       {/* Back Button */}
       <motion.div variants={itemVariants} className="w-full flex justify-center">
